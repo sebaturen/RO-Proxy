@@ -76,6 +76,9 @@ func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
                 ConnID:    packet.ConnectionID,
                 Timestamp: packet.Timestamp,
                 Payload:   packet.Payload,
+                SourceIP:  packet.SourceIP,
+                DestIP:    packet.DestIP,
+                DestPort:  packet.DestPort,
             }))
         }
         

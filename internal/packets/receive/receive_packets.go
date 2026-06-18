@@ -23,8 +23,10 @@ type PacketSpec struct {
 }
 
 var PacketDatabase = map[uint16]*PacketSpec{
+    0x0ac5: {Desc: "Received Character Id And Map", Size: 156, Type: FIXED, Handler: &ReceivedCharIdAndMap{}, Alert: false},
     0x0ac7: {Desc: "Map Changed", Size: 156, Type: FIXED, Handler: &MapChanged{}, Alert: false},
     0x0131: {Desc: "Vender Found", Size: 86, Type: FIXED, Handler: &VenderFound{}, Alert: false},
+    0x02eb: {Desc: "Map Loaded", Size: 13, Type: FIXED, Handler: &MapLoaded{}, Alert: false},
     // No implemented yet
     0x5448: {Desc: "HTTP Response", Size: -1, Type: HTTP, Handler: nil, Alert: false},
     0x0000: {Desc: "Empty", Size: 2, Type: FIXED, Handler: nil, Alert: false},
@@ -37,7 +39,6 @@ var PacketDatabase = map[uint16]*PacketSpec{
     0x09fe: {Desc: "Actor Connected", Size: -1, Type: INDICATED_IN_PACKET, Handler: nil, Alert: false},
     0x09ff: {Desc: "Actor Exists", Size: -1, Type: INDICATED_IN_PACKET, Handler: nil, Alert: false},
     0x0a30: {Desc: "Actor Info", Size: 106, Type: FIXED, Handler: nil, Alert: false},
-    0x0ac5: {Desc: "Received Character Id And Map", Size: 156, Type: FIXED, Handler: nil, Alert: false},
     0x0071: {Desc: "Received Character Id And Map", Size: 28, Type: FIXED, Handler: nil, Alert: false},
     0x0acb: {Desc: "Stat Info", Size: 12, Type: FIXED, Handler: nil, Alert: false},
     0x0acc: {Desc: "Exp", Size: 18, Type: FIXED, Handler: nil, Alert: false},
@@ -394,7 +395,6 @@ var PacketDatabase = map[uint16]*PacketSpec{
     0x02e8: {Desc: "Inventory Items Stackable", Size: -1, Type: INDICATED_IN_PACKET, Handler: nil, Alert: false},
     0x02e9: {Desc: "Cart Items Stackable", Size: -1, Type: INDICATED_IN_PACKET, Handler: nil, Alert: false},
     0x02ea: {Desc: "Storage Items Stackable", Size: -1, Type: INDICATED_IN_PACKET, Handler: nil, Alert: false},
-    0x02eb: {Desc: "Map Loaded", Size: 13, Type: FIXED, Handler: nil, Alert: false},
     0x02ec: {Desc: "Actor Exists", Size: 71, Type: FIXED, Handler: nil, Alert: false},
     0x02ed: {Desc: "Actor Connected", Size: 59, Type: FIXED, Handler: nil, Alert: true},
     0x02ee: {Desc: "Actor Moved", Size: 64, Type: FIXED, Handler: nil, Alert: false},

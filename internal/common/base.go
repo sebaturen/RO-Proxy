@@ -13,6 +13,9 @@ type BaseDeserializer struct {
     ConnID    uint64
     Timestamp int64
     Payload   []byte
+    SourceIP  string
+    DestIP    string
+    DestPort  int
 }
 
 func ReadUint32LE(data []byte, offset int) uint32 {

@@ -5,6 +5,7 @@ import (
     "io"
     "log"
     "net"
+    "strconv"
     "sync"
     "time"
 
@@ -32,15 +33,21 @@ func NewConnection(id uint64, clientConn net.Conn, serverAddr string, verbose bo
         return nil, err
     }
 
+    clientAddr := clientConn.RemoteAddr().String()
+    clientIP, _, _ := net.SplitHostPort(clientAddr)
+    
+    serverIP, serverPortStr, _ := net.SplitHostPort(serverAddr)
+    serverPort, _ := strconv.Atoi(serverPortStr)
+    
     packetChan := make(chan *packets.CapturedPacket, 1000)
-    parser := packets.NewStreamParser(id)
+    parser := packets.NewStreamParser(id, clientIP, serverIP, serverPort)
     processor := packets.NewPacketProcessor(id, packetChan, verbose)
 
     conn := &Connection{
         ID:         id,
         ClientConn: clientConn,
         ServerConn: serverConn,
-        ClientAddr: clientConn.RemoteAddr().String(),
+        ClientAddr: clientAddr,
         ServerAddr: serverAddr,
         StartTime:  time.Now(),
         parser:     parser,

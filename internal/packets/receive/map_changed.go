@@ -10,15 +10,13 @@ type MapChanged struct {
 }
 
 func (m *MapChanged) Deserialize() error {
-    if len(m.Payload) < 26 {
-        return nil
-    }
-
     mapName := common.ReadNullTerminatedString(m.Payload, 2)
     coordX := common.ReadUint16LE(m.Payload, 18)
     coordY := common.ReadUint16LE(m.Payload, 20)
 
     SetConnectionMap(m.ConnID, mapName)
-    log.Printf("[%d] Map changed to: %s (X:%d Y:%d)", m.ConnID, mapName, coordX, coordY)
+    SetPendingMapChange(m.SourceIP, mapName, coordX, coordY)
+    
+    log.Printf("[%d] Map changed to: %s (X:%d Y:%d) - Pending match for %s", m.ConnID, mapName, coordX, coordY, m.SourceIP)
     return nil
 }

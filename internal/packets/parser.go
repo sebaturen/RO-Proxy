@@ -14,17 +14,26 @@ type CapturedPacket struct {
     Opcode       uint16
     Size         uint16
     Payload      []byte
+    SourceIP     string
+    DestIP       string
+    DestPort     int
 }
 
 type StreamParser struct {
     connID uint64
     buffer *bytes.Buffer
+    sourceIP string
+    destIP   string
+    destPort int
 }
 
-func NewStreamParser(connID uint64) *StreamParser {
+func NewStreamParser(connID uint64, sourceIP, destIP string, destPort int) *StreamParser {
     return &StreamParser{
         connID: connID,
         buffer: &bytes.Buffer{},
+        sourceIP: sourceIP,
+        destIP:   destIP,
+        destPort: destPort,
     }
 }
 
@@ -86,6 +95,9 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
             Opcode:       opcode,
             Size:         uint16(packetSize),
             Payload:      packetData,
+            SourceIP:     sp.sourceIP,
+            DestIP:       sp.destIP,
+            DestPort:     sp.destPort,
         }
 
         packetChan <- packet

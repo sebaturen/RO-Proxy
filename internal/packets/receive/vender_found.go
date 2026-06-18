@@ -10,9 +10,6 @@ type VenderFound struct {
 }
 
 func (v *VenderFound) Deserialize() error {
-    if len(v.Payload) < 6 {
-        return nil
-    }
 
     vendorID := common.ReadUint32LE(v.Payload, 2)
     shopName := common.ReadNullTerminatedString(v.Payload, 6)
