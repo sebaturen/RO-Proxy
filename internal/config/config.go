@@ -7,9 +7,15 @@ import (
     "os"
 )
 
+type APIConfig struct {
+    URL string `json:"url"`
+    Key string `json:"key"`
+}
+
 type Config struct {
     ListenPort int      `json:"listen_port"`
     TargetIPs  []string `json:"target_ips"`
+    API        *APIConfig `json:"api,omitempty"`
 }
 
 func Load(path string) (*Config, error) {
@@ -21,7 +27,6 @@ func Load(path string) (*Config, error) {
 
     var cfg Config
     decoder := json.NewDecoder(file)
-    decoder.DisallowUnknownFields()
 
     if err := decoder.Decode(&cfg); err != nil {
         return nil, fmt.Errorf("cannot parse config: %w", err)

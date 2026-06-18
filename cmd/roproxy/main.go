@@ -13,6 +13,7 @@ import (
     "time"
 
     "roproxy/internal/config"
+    "roproxy/internal/packets"
     "roproxy/internal/proxy"
 )
 
@@ -38,6 +39,11 @@ func main() {
 
     fmt.Printf("Configuration loaded: listen_port=%d, allowed_ips=%d\n",
         cfg.ListenPort, len(cfg.TargetIPs))
+
+    if cfg.API != nil && cfg.API.URL != "" && cfg.API.Key != "" {
+        packets.InitAPIConsumer(cfg.API.URL, cfg.API.Key, verbose)
+        fmt.Printf("API consumer initialized: %s\n", cfg.API.URL)
+    }
 
     if verbose {
         fmt.Println("Verbose logging enabled")
