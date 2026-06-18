@@ -21,6 +21,7 @@ type CapturedPacket struct {
     DestIP       string
     DestPort     int
     Direction    common.PacketDirection
+    SecurityByte *uint8  // Only for ClientToServer packets
 }
 
 type StreamParser struct {
@@ -143,6 +144,36 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
         packetData := make([]byte, packetSize)
         buffer.Read(packetData)
 
+        var securityByte *uint8
+        if direction == common.ClientToServer && buffer.Len() > 0 {
+            // Check if there's a security byte after this packet
+            remainingBytes := buffer.Bytes()
+            
+            if len(remainingBytes) == 1 {
+                // Only 1 byte left → must be security byte
+                extraByte := make([]byte, 1)
+                buffer.Read(extraByte)
+                securityByte = &extraByte[0]
+            } else if len(remainingBytes) >= 2 {
+                // Check if next 2 bytes form a valid opcode
+                nextOpcode := binary.LittleEndian.Uint16(remainingBytes[0:2])
+                if send.PacketDatabase[nextOpcode] != nil {
+                    // Valid opcode → no security byte, next packet starts immediately
+                    securityByte = nil
+                } else if len(remainingBytes) >= 3 {
+                    // Check if bytes [1:3] form a valid opcode (skipping first byte)
+                    nextOpcodeAfterByte := binary.LittleEndian.Uint16(remainingBytes[1:3])
+                    if send.PacketDatabase[nextOpcodeAfterByte] != nil {
+                        // Bytes [1:3] are valid opcode → byte [0] is security byte
+                        extraByte := make([]byte, 1)
+                        buffer.Read(extraByte)
+                        securityByte = &extraByte[0]
+                    }
+                    // else: no security byte, unusual case
+                }
+            }
+        }
+
         packet := &CapturedPacket{
             ConnectionID: sp.connID,
             Timestamp:    timestamp,
@@ -153,6 +184,7 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
             DestIP:       sp.destIP,
             DestPort:     sp.destPort,
             Direction:    direction,
+            SecurityByte: securityByte,
         }
 
         packetChan <- packet
