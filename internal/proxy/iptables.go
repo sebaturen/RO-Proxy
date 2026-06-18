@@ -23,7 +23,7 @@ func SetupIPTables(targetIPs []string, proxyPort int) error {
 }
 
 func setupIPSet(targetIPs []string) error {
-	output, err := exec.Command("ipset", "list", ipsetName).CombinedOutput()
+	_, err := exec.Command("ipset", "list", ipsetName).CombinedOutput()
 	if err != nil {
 		if err := exec.Command("ipset", "create", ipsetName, "hash:ip").Run(); err != nil {
 			return fmt.Errorf("failed to create ipset: %w", err)
