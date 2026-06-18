@@ -2,7 +2,6 @@ package proxy
 
 import (
     "context"
-    "io"
     "log"
     "net"
     "strconv"
@@ -27,7 +26,7 @@ type Connection struct {
     wg           sync.WaitGroup
 }
 
-func NewConnection(id uint64, clientConn net.Conn, serverAddr string, verbose bool) (*Connection, error) {
+func NewConnection(id uint64, clientConn net.Conn, serverAddr string, verbose, captureServer, captureClient bool) (*Connection, error) {
     serverConn, err := net.DialTimeout("tcp", serverAddr, 10*time.Second)
     if err != nil {
         return nil, err
@@ -41,7 +40,7 @@ func NewConnection(id uint64, clientConn net.Conn, serverAddr string, verbose bo
     
     packetChan := make(chan *packets.CapturedPacket, 1000)
     parser := packets.NewStreamParser(id, clientIP, serverIP, serverPort)
-    processor := packets.NewPacketProcessor(id, packetChan, verbose)
+    processor := packets.NewPacketProcessor(id, packetChan, verbose, captureServer, captureClient)
 
     conn := &Connection{
         ID:         id,
@@ -66,7 +65,7 @@ func (c *Connection) Start(ctx context.Context, verbose bool) {
     }
 
     c.wg.Add(2)
-    go c.relayClientToServer(ctx)
+    go c.relayClientToServer(ctx, verbose)
     go c.relayServerToClient(ctx, verbose)
 }
 
@@ -82,9 +81,38 @@ func (c *Connection) Close() {
     receive.ClearConnectionMap(c.ID)
 }
 
-func (c *Connection) relayClientToServer(ctx context.Context) {
+func (c *Connection) relayClientToServer(ctx context.Context, verbose bool) {
     defer c.wg.Done()
-    io.Copy(c.ServerConn, c.ClientConn)
+
+    buf := make([]byte, 32*1024)
+    for {
+        select {
+        case <-ctx.Done():
+            return
+        default:
+            c.ClientConn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+            n, err := c.ClientConn.Read(buf)
+            
+            if n > 0 {
+                c.parser.AppendData(buf[:n])
+                
+                timestamp := time.Now().Unix()
+                c.parser.TryParsePackets(c.packetChan, timestamp, 1)  // 1 = client->server
+                
+                _, writeErr := c.ServerConn.Write(buf[:n])
+                if writeErr != nil {
+                    return
+                }
+            }
+
+            if err != nil {
+                if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+                    continue
+                }
+                return
+            }
+        }
+    }
 }
 
 func (c *Connection) relayServerToClient(ctx context.Context, verbose bool) {
@@ -103,7 +131,7 @@ func (c *Connection) relayServerToClient(ctx context.Context, verbose bool) {
                 c.parser.AppendData(buf[:n])
                 
                 timestamp := time.Now().Unix()
-                c.parser.TryParsePackets(c.packetChan, timestamp)
+                c.parser.TryParsePackets(c.packetChan, timestamp, 0)  // 0 = server->client
                 
                 _, writeErr := c.ClientConn.Write(buf[:n])
                 if writeErr != nil {
@@ -114,11 +142,6 @@ func (c *Connection) relayServerToClient(ctx context.Context, verbose bool) {
             if err != nil {
                 if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
                     continue
-                }
-                if err != io.EOF {
-                    if verbose {
-                        log.Printf("[%d] Server read error: %v", c.ID, err)
-                    }
                 }
                 return
             }

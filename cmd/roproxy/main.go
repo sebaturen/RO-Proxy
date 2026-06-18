@@ -17,10 +17,16 @@ import (
     "roproxy/internal/proxy"
 )
 
-var verbose bool
+var (
+    verbose       bool
+    captureServer bool
+    captureClient bool
+)
 
 func main() {
     flag.BoolVar(&verbose, "logs", false, "Enable verbose logging")
+    flag.BoolVar(&captureServer, "capture-server", true, "Capture server->client packets")
+    flag.BoolVar(&captureClient, "capture-client", true, "Capture client->server packets")
     flag.Parse()
 
     if !verbose {
@@ -66,11 +72,25 @@ func main() {
     fmt.Println("iptables configured successfully:")
     fmt.Print(proxy.GetIPTablesStatus(cfg.ListenPort))
 
+    if verbose {
+        captureInfo := "Capturing: "
+        if captureServer && captureClient {
+            captureInfo += "server->client + client->server"
+        } else if captureServer {
+            captureInfo += "server->client only"
+        } else if captureClient {
+            captureInfo += "client->server only"
+        } else {
+            captureInfo += "NONE (all disabled)"
+        }
+        fmt.Println(captureInfo)
+    }
+
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
     defer proxy.CleanupIPTables(cfg.ListenPort)
 
-    p := proxy.New(cfg, verbose)
+    p := proxy.New(cfg, verbose, captureServer, captureClient)
 
     sigChan := make(chan os.Signal, 1)
     signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)

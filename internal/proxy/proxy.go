@@ -23,9 +23,11 @@ type Proxy struct {
     nextConnID    atomic.Uint64
     allowedIPsMap map[string]bool
     verbose       bool
+    captureServer bool
+    captureClient bool
 }
 
-func New(cfg *config.Config, verbose bool) *Proxy {
+func New(cfg *config.Config, verbose, captureServer, captureClient bool) *Proxy {
     allowedIPs := make(map[string]bool)
     for _, ip := range cfg.TargetIPs {
         allowedIPs[ip] = true
@@ -36,6 +38,8 @@ func New(cfg *config.Config, verbose bool) *Proxy {
         connections:   make(map[uint64]*Connection),
         allowedIPsMap: allowedIPs,
         verbose:       verbose,
+        captureServer: captureServer,
+        captureClient: captureClient,
     }
 }
 
@@ -101,7 +105,7 @@ func (p *Proxy) handleConnection(ctx context.Context, clientConn net.Conn) {
 
     log.Printf("[%d] Validated target IP: %s", connID, destIP)
 
-    conn, err := NewConnection(connID, clientConn, originalDest, p.verbose)
+    conn, err := NewConnection(connID, clientConn, originalDest, p.verbose, p.captureServer, p.captureClient)
     if err != nil {
         log.Printf("[%d] Failed to connect to target %s: %v", connID, originalDest, err)
         clientConn.Close()

@@ -14,14 +14,18 @@ type PacketProcessor struct {
     packetChan  <-chan *CapturedPacket
     stopChan    chan struct{}
     verbose     bool
+    captureServer   bool
+    captureClient   bool
 }
 
-func NewPacketProcessor(connID uint64, packetChan <-chan *CapturedPacket, verbose bool) *PacketProcessor {
+func NewPacketProcessor(connID uint64, packetChan <-chan *CapturedPacket, verbose, captureServer, captureClient bool) *PacketProcessor {
     return &PacketProcessor{
         connID:     connID,
         packetChan: packetChan,
         stopChan:   make(chan struct{}),
         verbose:    verbose,
+        captureServer: captureServer,
+        captureClient: captureClient,
     }
 }
 
@@ -49,19 +53,35 @@ func (pp *PacketProcessor) processLoop() {
 }
 
 func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
+    // Filter by direction
+    if packet.Direction == 0 && !pp.captureServer {
+        return
+    }
+    if packet.Direction == 1 && !pp.captureClient {
+        return
+    }
+
     spec := receive.PacketDatabase[packet.Opcode]
     if spec == nil {
         if pp.verbose {
-            log.Printf("[%d] Unknown packet: opcode=0x%04X size=%d", 
-                packet.ConnectionID, packet.Opcode, packet.Size)
+            dirStr := "S->C"
+            if packet.Direction == 1 {
+                dirStr = "C->S"
+            }
+            log.Printf("[%d] [%s] Unknown packet: opcode=0x%04X size=%d", packet.ConnectionID, dirStr, packet.Opcode, packet.Size)
         }
         return
     }
 
+    dirStr := "S->C"
+    if packet.Direction == 1 {
+        dirStr = "C->S"
+    }
+
     if pp.verbose {
-        log.Printf("[%d] [0x%04X][%s] size=%d payload=%X", packet.ConnectionID, packet.Opcode, spec.Desc, packet.Size, packet.Payload)
+        log.Printf("[%d] [%s] [0x%04X][%s] size=%d payload=%X", packet.ConnectionID, dirStr, packet.Opcode, spec.Desc, packet.Size, packet.Payload)
     } else {
-        fmt.Printf("[%d] [0x%04X][%s]\n", packet.ConnectionID, packet.Opcode, spec.Desc)
+        fmt.Printf("[%d] [%s] [0x%04X][%s]\n", packet.ConnectionID, dirStr, packet.Opcode, spec.Desc)
     }
 
     if spec.Handler != nil {
@@ -84,6 +104,8 @@ func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
         
         err := spec.Handler.Deserialize()
         if err != nil && pp.verbose {
+            log.Printf("[%d] [%s] Deserialization error for 0x%04X: %v", packet.ConnectionID, dirStr, packet.Opcode, err)
+        } else {
             log.Printf("[%d] Deserialization error for 0x%04X: %v", packet.ConnectionID, packet.Opcode, err)
         }
     }

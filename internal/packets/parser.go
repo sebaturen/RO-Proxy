@@ -17,6 +17,7 @@ type CapturedPacket struct {
     SourceIP     string
     DestIP       string
     DestPort     int
+    Direction    uint8  // 0 = server->client, 1 = client->server
 }
 
 type StreamParser struct {
@@ -41,7 +42,7 @@ func (sp *StreamParser) AppendData(data []byte) {
     sp.buffer.Write(data)
 }
 
-func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, timestamp int64) {
+func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, timestamp int64, direction uint8) {
     for {
         if sp.buffer.Len() < 2 {
             return
@@ -98,6 +99,7 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
             SourceIP:     sp.sourceIP,
             DestIP:       sp.destIP,
             DestPort:     sp.destPort,
+            Direction:    direction,
         }
 
         packetChan <- packet
