@@ -3,7 +3,6 @@ package proxy
 import (
     "context"
     "fmt"
-    "io"
     "log"
     "net"
     "sync"
@@ -16,14 +15,6 @@ import (
 
 const SO_ORIGINAL_DST = 80
 
-type Connection struct {
-    ID         uint64
-    ClientAddr string
-    TargetAddr string
-    ClientConn net.Conn
-    ServerConn net.Conn
-}
-
 type Proxy struct {
     cfg           *config.Config
     listener      net.Listener
@@ -31,9 +22,10 @@ type Proxy struct {
     connMutex     sync.RWMutex
     nextConnID    atomic.Uint64
     allowedIPsMap map[string]bool
+    verbose       bool
 }
 
-func New(cfg *config.Config) *Proxy {
+func New(cfg *config.Config, verbose bool) *Proxy {
     allowedIPs := make(map[string]bool)
     for _, ip := range cfg.TargetIPs {
         allowedIPs[ip] = true
@@ -43,6 +35,7 @@ func New(cfg *config.Config) *Proxy {
         cfg:           cfg,
         connections:   make(map[uint64]*Connection),
         allowedIPsMap: allowedIPs,
+        verbose:       verbose,
     }
 }
 
@@ -108,19 +101,11 @@ func (p *Proxy) handleConnection(ctx context.Context, clientConn net.Conn) {
 
     log.Printf("[%d] Validated target IP: %s", connID, destIP)
 
-    serverConn, err := net.Dial("tcp", originalDest)
+    conn, err := NewConnection(connID, clientConn, originalDest, p.verbose)
     if err != nil {
         log.Printf("[%d] Failed to connect to target %s: %v", connID, originalDest, err)
         clientConn.Close()
         return
-    }
-
-    conn := &Connection{
-        ID:         connID,
-        ClientAddr: clientAddr,
-        TargetAddr: originalDest,
-        ClientConn: clientConn,
-        ServerConn: serverConn,
     }
 
     p.connMutex.Lock()
@@ -132,42 +117,14 @@ func (p *Proxy) handleConnection(ctx context.Context, clientConn net.Conn) {
         delete(p.connections, connID)
         p.connMutex.Unlock()
 
-        clientConn.Close()
-        serverConn.Close()
-        log.Printf("[%d] Connection closed", connID)
+        conn.Close()
+        if p.verbose {
+            log.Printf("[%d] Connection closed", connID)
+        }
     }()
 
-    log.Printf("[%d] Established relay: %s <-> %s", connID, clientAddr, originalDest)
-
-    var wg sync.WaitGroup
-    wg.Add(2)
-
-    copyDone := make(chan struct{})
-
-    go func() {
-        defer wg.Done()
-        bytes, _ := io.Copy(serverConn, clientConn)
-        log.Printf("[%d] Client->Server closed (%d bytes)", connID, bytes)
-        serverConn.(*net.TCPConn).CloseWrite()
-        close(copyDone)
-    }()
-
-    go func() {
-        defer wg.Done()
-        bytes, _ := io.Copy(clientConn, serverConn)
-        log.Printf("[%d] Server->Client closed (%d bytes)", connID, bytes)
-        clientConn.(*net.TCPConn).CloseWrite()
-    }()
-
-    select {
-    case <-ctx.Done():
-        log.Printf("[%d] Context cancelled, closing connection", connID)
-        clientConn.Close()
-        serverConn.Close()
-    case <-copyDone:
-    }
-
-    wg.Wait()
+    conn.Start(ctx, p.verbose)
+    conn.Wait()
 }
 
 func getOriginalDest(conn net.Conn) (string, error) {
