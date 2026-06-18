@@ -1,16 +1,5 @@
-# Binaries
-roproxy
-*.exe
-*.exe~
-*.so
-*.dylib
-*.dll
-
 # Config
 config.json
-
-# Test binaries
-*.test
 
 # Go workspace
 go.work
