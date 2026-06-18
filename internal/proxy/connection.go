@@ -94,7 +94,7 @@ func (c *Connection) relayClientToServer(ctx context.Context, verbose bool) {
             n, err := c.ClientConn.Read(buf)
             
             if n > 0 {
-                c.parser.AppendData(buf[:n])
+                c.parser.AppendData(buf[:n], 1)  // 1 = client->server
                 
                 timestamp := time.Now().Unix()
                 c.parser.TryParsePackets(c.packetChan, timestamp, 1)  // 1 = client->server
@@ -128,7 +128,7 @@ func (c *Connection) relayServerToClient(ctx context.Context, verbose bool) {
             n, err := c.ServerConn.Read(buf)
             
             if n > 0 {
-                c.parser.AppendData(buf[:n])
+                c.parser.AppendData(buf[:n], 0)  // 0 = server->client
                 
                 timestamp := time.Now().Unix()
                 c.parser.TryParsePackets(c.packetChan, timestamp, 0)  // 0 = server->client

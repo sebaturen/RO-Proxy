@@ -25,7 +25,8 @@ type CapturedPacket struct {
 
 type StreamParser struct {
     connID uint64
-    buffer *bytes.Buffer
+    clientBuffer *bytes.Buffer
+    serverBuffer *bytes.Buffer
     sourceIP string
     destIP   string
     destPort int
@@ -35,7 +36,8 @@ type StreamParser struct {
 func NewStreamParser(connID uint64, sourceIP, destIP string, destPort int, verbose bool) *StreamParser {
     return &StreamParser{
         connID: connID,
-        buffer: &bytes.Buffer{},
+        clientBuffer: &bytes.Buffer{},
+        serverBuffer: &bytes.Buffer{},
         sourceIP: sourceIP,
         destIP:   destIP,
         destPort: destPort,
@@ -43,17 +45,26 @@ func NewStreamParser(connID uint64, sourceIP, destIP string, destPort int, verbo
     }
 }
 
-func (sp *StreamParser) AppendData(data []byte) {
-    sp.buffer.Write(data)
+func (sp *StreamParser) AppendData(data []byte, direction uint8) {
+    if direction == 0 {
+        sp.serverBuffer.Write(data)
+    } else {
+        sp.clientBuffer.Write(data)
+    }
 }
 
 func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, timestamp int64, direction uint8) {
+    buffer := sp.serverBuffer
+    if direction == 1 {
+        buffer = sp.clientBuffer
+    }
+    
     for {
-        if sp.buffer.Len() < 2 {
+        if buffer.Len() < 2 {
             return
         }
 
-        bufData := sp.buffer.Bytes()
+        bufData := buffer.Bytes()
         opcode := binary.LittleEndian.Uint16(bufData[0:2])
         
         var spec *common.PacketSpec
@@ -72,14 +83,14 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
                     dirStr = "C->S"
                 }
                 contextLen := 16
-                if sp.buffer.Len() < contextLen {
-                    contextLen = sp.buffer.Len()
+                if buffer.Len() < contextLen {
+                    contextLen = buffer.Len()
                 }
-                context := sp.buffer.Bytes()[:contextLen]
+                context := buffer.Bytes()[:contextLen]
                 log.Printf("[%d] [%s] WARN: Unknown opcode 0x%04X, discarding 1 byte. Buffer context: %X", 
                     sp.connID, dirStr, opcode, context)
             }
-            sp.buffer.Next(1)
+            buffer.Next(1)
             continue
         }
 
@@ -89,10 +100,10 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
         switch spec.Type {
         case common.FIXED, common.FIXED_MIN:
             packetSize = int(spec.Size)
-            valid = sp.buffer.Len() >= packetSize
+            valid = buffer.Len() >= packetSize
 
         case common.INDICATED_IN_PACKET:
-            if sp.buffer.Len() >= 4 {
+            if buffer.Len() >= 4 {
                 packetSize = int(binary.LittleEndian.Uint16(bufData[2:4]))
                 if packetSize < 4 || packetSize > 10485760 {
                     if sp.verbose {
@@ -103,14 +114,14 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
                         log.Printf("[%d] [%s] WARN: Invalid packet size %d for opcode 0x%04X, discarding 1 byte", 
                             sp.connID, dirStr, packetSize, opcode)
                     }
-                    sp.buffer.Next(1)
+                    buffer.Next(1)
                     continue
                 }
-                valid = sp.buffer.Len() >= packetSize
+                valid = buffer.Len() >= packetSize
             }
 
         case common.HTTP:
-            packetSize, valid = sp.parseHTTPPacket()
+            packetSize, valid = sp.parseHTTPPacket(buffer)
 
         case common.UNKNOWN:
             if sp.verbose {
@@ -121,7 +132,7 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
                 log.Printf("[%d] [%s] WARN: UNKNOWN packet type for opcode 0x%04X, discarding 1 byte", 
                     sp.connID, dirStr, opcode)
             }
-            sp.buffer.Next(1)
+            buffer.Next(1)
             continue
         }
 
@@ -130,7 +141,7 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
         }
 
         packetData := make([]byte, packetSize)
-        sp.buffer.Read(packetData)
+        buffer.Read(packetData)
 
         packet := &CapturedPacket{
             ConnectionID: sp.connID,
@@ -148,8 +159,8 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
     }
 }
 
-func (sp *StreamParser) parseHTTPPacket() (int, bool) {
-    bufData := sp.buffer.Bytes()
+func (sp *StreamParser) parseHTTPPacket(buffer *bytes.Buffer) (int, bool) {
+    bufData := buffer.Bytes()
     delimiter := []byte{0x0D, 0x0A, 0x0D, 0x0A}
 
     headerEnd := bytes.Index(bufData, delimiter)
@@ -164,7 +175,7 @@ func (sp *StreamParser) parseHTTPPacket() (int, bool) {
         chunkEnd := bytes.Index(bufData[headerEnd:], delimiter)
         if chunkEnd != -1 {
             totalSize := headerEnd + chunkEnd + 4
-            if sp.buffer.Len() >= totalSize {
+            if buffer.Len() >= totalSize {
                 return totalSize, true
             }
         }
@@ -181,7 +192,7 @@ func (sp *StreamParser) parseHTTPPacket() (int, bool) {
         contentLength := 0
         fmt.Sscanf(headers[start:end], "%d", &contentLength)
         totalSize := headerEnd + contentLength
-        if sp.buffer.Len() >= totalSize {
+        if buffer.Len() >= totalSize {
             return totalSize, true
         }
         return 0, false
