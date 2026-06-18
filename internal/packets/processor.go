@@ -59,7 +59,7 @@ func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
     }
 
     if pp.verbose {
-        log.Printf("[%d] [0x%04X][%s]", packet.ConnectionID, packet.Opcode, spec.Desc)
+        log.Printf("[%d] [0x%04X][%s] size=%d payload=%X", packet.ConnectionID, packet.Opcode, spec.Desc, packet.Size, packet.Payload)
     } else {
         fmt.Printf("[%d] [0x%04X][%s]\n", packet.ConnectionID, packet.Opcode, spec.Desc)
     }
