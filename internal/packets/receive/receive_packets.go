@@ -1,10 +1,7 @@
-// Generated once by tools/generate_packet_db.py
-// Future modifications should be done manually
-
-package packets
+package receive
 
 import (
-    "roproxy/internal/packets/receive"
+    "roproxy/internal/common"
 )
 
 type PacketSizeType int
@@ -17,21 +14,17 @@ const (
     HTTP
 )
 
-type PacketDeserializer interface {
-    Deserialize(connID uint64, timestamp int64, payload []byte) error
-}
-
 type PacketSpec struct {
     Desc    string
     Size    int16
     Type    PacketSizeType
-    Handler PacketDeserializer
+    Handler common.PacketDeserializer
     Alert   bool
 }
 
 var PacketDatabase = map[uint16]*PacketSpec{
-    0x0ac7: {Desc: "Map Changed", Size: 156, Type: FIXED, Handler: &receive.MapChanged{}, Alert: false},
-    0x0131: {Desc: "Vender Found", Size: 86, Type: FIXED, Handler: &receive.VenderFound{}, Alert: false},
+    0x0ac7: {Desc: "Map Changed", Size: 156, Type: FIXED, Handler: &MapChanged{}, Alert: false},
+    0x0131: {Desc: "Vender Found", Size: 86, Type: FIXED, Handler: &VenderFound{}, Alert: false},
     // No implemented yet
     0x5448: {Desc: "HTTP Response", Size: -1, Type: HTTP, Handler: nil, Alert: false},
     0x0000: {Desc: "Empty", Size: 2, Type: FIXED, Handler: nil, Alert: false},

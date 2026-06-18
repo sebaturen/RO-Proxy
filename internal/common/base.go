@@ -1,4 +1,4 @@
-package receive
+package common
 
 import (
     "encoding/binary"

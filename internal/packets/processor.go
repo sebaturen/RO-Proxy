@@ -5,6 +5,7 @@ import (
     "log"
     "reflect"
     
+    "roproxy/internal/common"
     "roproxy/internal/packets/receive"
 )
 
@@ -48,7 +49,7 @@ func (pp *PacketProcessor) processLoop() {
 }
 
 func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
-    spec := PacketDatabase[packet.Opcode]
+    spec := receive.PacketDatabase[packet.Opcode]
     if spec == nil {
         if pp.verbose {
             log.Printf("[%d] Unknown packet: opcode=0x%04X size=%d", 
@@ -71,7 +72,7 @@ func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
         
         baseField := handlerValue.FieldByName("BaseDeserializer")
         if baseField.IsValid() && baseField.CanSet() {
-            baseField.Set(reflect.ValueOf(receive.BaseDeserializer{
+            baseField.Set(reflect.ValueOf(common.BaseDeserializer{
                 ConnID:    packet.ConnectionID,
                 Timestamp: packet.Timestamp,
                 Payload:   packet.Payload,

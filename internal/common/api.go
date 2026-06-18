@@ -1,4 +1,4 @@
-package packets
+package common
 
 import (
     "bytes"
@@ -8,15 +8,11 @@ import (
     "log"
     "net/http"
     "time"
-    
-    "roproxy/internal/packets/receive"
 )
 
 type APIRequest struct {
     Endpoint  string
     Payload   map[string]interface{}
-    ConnID    uint64
-    Timestamp int64
 }
 
 type APIConsumer struct {
@@ -58,8 +54,6 @@ func SendToAPI(endpoint string, payload map[string]interface{}) {
     globalAPIConsumer.queue <- APIRequest{
         Endpoint:  endpoint,
         Payload:   payload,
-        ConnID:    base.ConnID,
-        Timestamp: base.Timestamp,
     }
 }
 
@@ -102,7 +96,7 @@ func (ac *APIConsumer) sendRequest(req APIRequest) {
 
         if resp.StatusCode >= 200 && resp.StatusCode < 300 {
             if ac.verbose {
-                log.Printf("API request sent: %s [%d]", req.Endpoint, req.ConnID)
+                log.Printf("API request sent: %s", req.Endpoint)
             }
             return
         }

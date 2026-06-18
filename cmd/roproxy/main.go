@@ -12,8 +12,8 @@ import (
     "syscall"
     "time"
 
+    "roproxy/internal/common"
     "roproxy/internal/config"
-    "roproxy/internal/packets"
     "roproxy/internal/proxy"
 )
 
@@ -41,7 +41,7 @@ func main() {
         cfg.ListenPort, len(cfg.TargetIPs))
 
     if cfg.API != nil && cfg.API.URL != "" && cfg.API.Key != "" {
-        packets.InitAPIConsumer(cfg.API.URL, cfg.API.Key, verbose)
+        common.InitAPIConsumer(cfg.API.URL, cfg.API.Key, verbose)
         fmt.Printf("API consumer initialized: %s\n", cfg.API.URL)
     }
 

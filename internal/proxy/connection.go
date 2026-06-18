@@ -9,6 +9,7 @@ import (
     "time"
 
     "roproxy/internal/packets"
+    "roproxy/internal/packets/receive"
 )
 
 type Connection struct {
@@ -71,7 +72,7 @@ func (c *Connection) Close() {
     c.ServerConn.Close()
     close(c.packetChan)
     c.processor.Stop()
-    packets.ClearConnectionMap(c.ID)
+    receive.ClearConnectionMap(c.ID)
 }
 
 func (c *Connection) relayClientToServer(ctx context.Context) {

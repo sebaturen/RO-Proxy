@@ -4,6 +4,8 @@ import (
     "bytes"
     "encoding/binary"
     "fmt"
+    
+    "roproxy/internal/packets/receive"
 )
 
 type CapturedPacket struct {
@@ -39,7 +41,7 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
         bufData := sp.buffer.Bytes()
         opcode := binary.LittleEndian.Uint16(bufData[0:2])
         
-        spec := PacketDatabase[opcode]
+        spec := receive.PacketDatabase[opcode]
         if spec == nil {
             sp.buffer.Next(1)
             continue
@@ -49,11 +51,11 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
         valid := false
 
         switch spec.Type {
-        case FIXED, FIXED_MIN:
+        case receive.FIXED, receive.FIXED_MIN:
             packetSize = int(spec.Size)
             valid = sp.buffer.Len() >= packetSize
 
-        case INDICATED_IN_PACKET:
+        case receive.INDICATED_IN_PACKET:
             if sp.buffer.Len() >= 4 {
                 packetSize = int(binary.LittleEndian.Uint16(bufData[2:4]))
                 if packetSize < 4 || packetSize > 10485760 {
@@ -63,10 +65,10 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
                 valid = sp.buffer.Len() >= packetSize
             }
 
-        case HTTP:
+        case receive.HTTP:
             packetSize, valid = sp.parseHTTPPacket()
 
-        case UNKNOWN:
+        case receive.UNKNOWN:
             sp.buffer.Next(1)
             continue
         }
