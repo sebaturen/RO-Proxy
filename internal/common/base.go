@@ -5,6 +5,24 @@ import (
     "encoding/hex"
 )
 
+type PacketSizeType int
+
+const (
+    FIXED PacketSizeType = iota
+    INDICATED_IN_PACKET
+    UNKNOWN
+    FIXED_MIN
+    HTTP
+)
+
+type PacketSpec struct {
+    Desc    string
+    Size    int16
+    Type    PacketSizeType
+    Handler PacketDeserializer
+    Alert   bool
+}
+
 type PacketDeserializer interface {
     Deserialize() error
 }

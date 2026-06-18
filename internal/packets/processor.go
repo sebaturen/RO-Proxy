@@ -7,6 +7,7 @@ import (
     
     "roproxy/internal/common"
     "roproxy/internal/packets/receive"
+    "roproxy/internal/packets/send"
 )
 
 type PacketProcessor struct {
@@ -61,7 +62,13 @@ func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
         return
     }
 
-    spec := receive.PacketDatabase[packet.Opcode]
+    var spec *common.PacketSpec
+    if packet.Direction == 0 {
+        spec = receive.PacketDatabase[packet.Opcode]
+    } else {
+        spec = send.PacketDatabase[packet.Opcode]
+    }
+    
     if spec == nil {
         if pp.verbose {
             dirStr := "S->C"

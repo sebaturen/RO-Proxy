@@ -5,7 +5,9 @@ import (
     "encoding/binary"
     "fmt"
     
+    "roproxy/internal/common"
     "roproxy/internal/packets/receive"
+    "roproxy/internal/packets/send"
 )
 
 type CapturedPacket struct {
@@ -51,7 +53,15 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
         bufData := sp.buffer.Bytes()
         opcode := binary.LittleEndian.Uint16(bufData[0:2])
         
-        spec := receive.PacketDatabase[opcode]
+        var spec *common.PacketSpec
+        if direction == 0 {
+            // server->client: use receive database
+            spec = receive.PacketDatabase[opcode]
+        } else {
+            // client->server: use send database
+            spec = send.PacketDatabase[opcode]
+        }
+        
         if spec == nil {
             sp.buffer.Next(1)
             continue
@@ -61,11 +71,11 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
         valid := false
 
         switch spec.Type {
-        case receive.FIXED, receive.FIXED_MIN:
+        case common.FIXED, common.FIXED_MIN:
             packetSize = int(spec.Size)
             valid = sp.buffer.Len() >= packetSize
 
-        case receive.INDICATED_IN_PACKET:
+        case common.INDICATED_IN_PACKET:
             if sp.buffer.Len() >= 4 {
                 packetSize = int(binary.LittleEndian.Uint16(bufData[2:4]))
                 if packetSize < 4 || packetSize > 10485760 {
@@ -75,10 +85,10 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
                 valid = sp.buffer.Len() >= packetSize
             }
 
-        case receive.HTTP:
+        case common.HTTP:
             packetSize, valid = sp.parseHTTPPacket()
 
-        case receive.UNKNOWN:
+        case common.UNKNOWN:
             sp.buffer.Next(1)
             continue
         }
