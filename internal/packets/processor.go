@@ -110,10 +110,10 @@ func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
         }
         
         err := spec.Handler.Deserialize()
-        if err != nil && pp.verbose {
-            log.Printf("[%d] [%s] Deserialization error for 0x%04X: %v", packet.ConnectionID, dirStr, packet.Opcode, err)
-        } else {
-            log.Printf("[%d] Deserialization error for 0x%04X: %v", packet.ConnectionID, packet.Opcode, err)
+        if err != nil {
+            if pp.verbose {
+                log.Printf("[%d] [%s] Deserialization error for 0x%04X: %v", packet.ConnectionID, dirStr, packet.Opcode, err)
+            }
         }
     }
 }

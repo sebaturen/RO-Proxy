@@ -39,7 +39,7 @@ func NewConnection(id uint64, clientConn net.Conn, serverAddr string, verbose, c
     serverPort, _ := strconv.Atoi(serverPortStr)
     
     packetChan := make(chan *packets.CapturedPacket, 1000)
-    parser := packets.NewStreamParser(id, clientIP, serverIP, serverPort)
+    parser := packets.NewStreamParser(id, clientIP, serverIP, serverPort, verbose)
     processor := packets.NewPacketProcessor(id, packetChan, verbose, captureServer, captureClient)
 
     conn := &Connection{

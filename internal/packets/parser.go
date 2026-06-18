@@ -4,6 +4,7 @@ import (
     "bytes"
     "encoding/binary"
     "fmt"
+    "log"
     
     "roproxy/internal/common"
     "roproxy/internal/packets/receive"
@@ -28,15 +29,17 @@ type StreamParser struct {
     sourceIP string
     destIP   string
     destPort int
+    verbose  bool
 }
 
-func NewStreamParser(connID uint64, sourceIP, destIP string, destPort int) *StreamParser {
+func NewStreamParser(connID uint64, sourceIP, destIP string, destPort int, verbose bool) *StreamParser {
     return &StreamParser{
         connID: connID,
         buffer: &bytes.Buffer{},
         sourceIP: sourceIP,
         destIP:   destIP,
         destPort: destPort,
+        verbose:  verbose,
     }
 }
 
@@ -63,6 +66,19 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
         }
         
         if spec == nil {
+            if sp.verbose {
+                dirStr := "S->C"
+                if direction == 1 {
+                    dirStr = "C->S"
+                }
+                contextLen := 16
+                if sp.buffer.Len() < contextLen {
+                    contextLen = sp.buffer.Len()
+                }
+                context := sp.buffer.Bytes()[:contextLen]
+                log.Printf("[%d] [%s] WARN: Unknown opcode 0x%04X, discarding 1 byte. Buffer context: %X", 
+                    sp.connID, dirStr, opcode, context)
+            }
             sp.buffer.Next(1)
             continue
         }
@@ -79,6 +95,14 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
             if sp.buffer.Len() >= 4 {
                 packetSize = int(binary.LittleEndian.Uint16(bufData[2:4]))
                 if packetSize < 4 || packetSize > 10485760 {
+                    if sp.verbose {
+                        dirStr := "S->C"
+                        if direction == 1 {
+                            dirStr = "C->S"
+                        }
+                        log.Printf("[%d] [%s] WARN: Invalid packet size %d for opcode 0x%04X, discarding 1 byte", 
+                            sp.connID, dirStr, packetSize, opcode)
+                    }
                     sp.buffer.Next(1)
                     continue
                 }
@@ -89,6 +113,14 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
             packetSize, valid = sp.parseHTTPPacket()
 
         case common.UNKNOWN:
+            if sp.verbose {
+                dirStr := "S->C"
+                if direction == 1 {
+                    dirStr = "C->S"
+                }
+                log.Printf("[%d] [%s] WARN: UNKNOWN packet type for opcode 0x%04X, discarding 1 byte", 
+                    sp.connID, dirStr, opcode)
+            }
             sp.buffer.Next(1)
             continue
         }
