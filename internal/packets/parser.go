@@ -20,7 +20,7 @@ type CapturedPacket struct {
     SourceIP     string
     DestIP       string
     DestPort     int
-    Direction    uint8  // 0 = server->client, 1 = client->server
+    Direction    common.PacketDirection
 }
 
 type StreamParser struct {
@@ -45,17 +45,17 @@ func NewStreamParser(connID uint64, sourceIP, destIP string, destPort int, verbo
     }
 }
 
-func (sp *StreamParser) AppendData(data []byte, direction uint8) {
-    if direction == 0 {
+func (sp *StreamParser) AppendData(data []byte, direction common.PacketDirection) {
+    if direction == common.ServerToClient {
         sp.serverBuffer.Write(data)
     } else {
         sp.clientBuffer.Write(data)
     }
 }
 
-func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, timestamp int64, direction uint8) {
+func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, timestamp int64, direction common.PacketDirection) {
     buffer := sp.serverBuffer
-    if direction == 1 {
+    if direction == common.ClientToServer {
         buffer = sp.clientBuffer
     }
     
@@ -68,7 +68,7 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
         opcode := binary.LittleEndian.Uint16(bufData[0:2])
         
         var spec *common.PacketSpec
-        if direction == 0 {
+        if direction == common.ServerToClient {
             // server->client: use receive database
             spec = receive.PacketDatabase[opcode]
         } else {
@@ -79,7 +79,7 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
         if spec == nil {
             if sp.verbose {
                 dirStr := "S->C"
-                if direction == 1 {
+                if direction == common.ClientToServer {
                     dirStr = "C->S"
                 }
                 contextLen := 16
@@ -108,7 +108,7 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
                 if packetSize < 4 || packetSize > 10485760 {
                     if sp.verbose {
                         dirStr := "S->C"
-                        if direction == 1 {
+                        if direction == common.ClientToServer {
                             dirStr = "C->S"
                         }
                         log.Printf("[%d] [%s] WARN: Invalid packet size %d for opcode 0x%04X, discarding 1 byte", 
@@ -126,7 +126,7 @@ func (sp *StreamParser) TryParsePackets(packetChan chan<- *CapturedPacket, times
         case common.UNKNOWN:
             if sp.verbose {
                 dirStr := "S->C"
-                if direction == 1 {
+                if direction == common.ClientToServer {
                     dirStr = "C->S"
                 }
                 log.Printf("[%d] [%s] WARN: UNKNOWN packet type for opcode 0x%04X, discarding 1 byte", 

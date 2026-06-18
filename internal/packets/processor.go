@@ -55,15 +55,15 @@ func (pp *PacketProcessor) processLoop() {
 
 func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
     // Filter by direction
-    if packet.Direction == 0 && !pp.captureServer {
+    if packet.Direction == common.ServerToClient && !pp.captureServer {
         return
     }
-    if packet.Direction == 1 && !pp.captureClient {
+    if packet.Direction == common.ClientToServer && !pp.captureClient {
         return
     }
 
     var spec *common.PacketSpec
-    if packet.Direction == 0 {
+    if packet.Direction == common.ServerToClient {
         spec = receive.PacketDatabase[packet.Opcode]
     } else {
         spec = send.PacketDatabase[packet.Opcode]
@@ -72,7 +72,7 @@ func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
     if spec == nil {
         if pp.verbose {
             dirStr := "S->C"
-            if packet.Direction == 1 {
+            if packet.Direction == common.ClientToServer {
                 dirStr = "C->S"
             }
             log.Printf("[%d] [%s] Unknown packet: opcode=0x%04X size=%d", packet.ConnectionID, dirStr, packet.Opcode, packet.Size)
@@ -81,7 +81,7 @@ func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
     }
 
     dirStr := "S->C"
-    if packet.Direction == 1 {
+    if packet.Direction == common.ClientToServer {
         dirStr = "C->S"
     }
 

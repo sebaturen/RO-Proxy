@@ -5,6 +5,13 @@ import (
     "encoding/hex"
 )
 
+type PacketDirection uint8
+
+const (
+    ServerToClient PacketDirection = 0
+    ClientToServer PacketDirection = 1
+)
+
 type PacketSizeType int
 
 const (

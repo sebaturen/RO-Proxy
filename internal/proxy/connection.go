@@ -8,6 +8,7 @@ import (
     "sync"
     "time"
 
+    "roproxy/internal/common"
     "roproxy/internal/packets"
     "roproxy/internal/packets/receive"
 )
@@ -94,10 +95,10 @@ func (c *Connection) relayClientToServer(ctx context.Context, verbose bool) {
             n, err := c.ClientConn.Read(buf)
             
             if n > 0 {
-                c.parser.AppendData(buf[:n], 1)  // 1 = client->server
+                c.parser.AppendData(buf[:n], common.ClientToServer)
                 
                 timestamp := time.Now().Unix()
-                c.parser.TryParsePackets(c.packetChan, timestamp, 1)  // 1 = client->server
+                c.parser.TryParsePackets(c.packetChan, timestamp, common.ClientToServer)
                 
                 _, writeErr := c.ServerConn.Write(buf[:n])
                 if writeErr != nil {
@@ -128,10 +129,10 @@ func (c *Connection) relayServerToClient(ctx context.Context, verbose bool) {
             n, err := c.ServerConn.Read(buf)
             
             if n > 0 {
-                c.parser.AppendData(buf[:n], 0)  // 0 = server->client
+                c.parser.AppendData(buf[:n], common.ServerToClient)
                 
                 timestamp := time.Now().Unix()
-                c.parser.TryParsePackets(c.packetChan, timestamp, 0)  // 0 = server->client
+                c.parser.TryParsePackets(c.packetChan, timestamp, common.ServerToClient)
                 
                 _, writeErr := c.ClientConn.Write(buf[:n])
                 if writeErr != nil {
