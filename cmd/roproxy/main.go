@@ -43,8 +43,26 @@ func main() {
         fmt.Println("Verbose logging enabled")
     }
 
+    if err := proxy.VerifyIPTablesSetup(); err != nil {
+        fmt.Printf("iptables verification failed: %v\n", err)
+        fmt.Println("Make sure you:")
+        fmt.Println("  1. Run as root (sudo ./roproxy)")
+        fmt.Println("  2. Have iptables and ipset installed")
+        os.Exit(1)
+    }
+
+    fmt.Println("Configuring iptables rules...")
+    if err := proxy.SetupIPTables(cfg.TargetIPs, cfg.ListenPort); err != nil {
+        fmt.Printf("Failed to setup iptables: %v\n", err)
+        os.Exit(1)
+    }
+
+    fmt.Println("iptables configured successfully:")
+    fmt.Print(proxy.GetIPTablesStatus(cfg.ListenPort))
+
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
+    defer proxy.CleanupIPTables(cfg.ListenPort)
 
     p := proxy.New(cfg)
 
