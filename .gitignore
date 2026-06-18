@@ -1,0 +1,31 @@
+# Binaries
+roproxy
+*.exe
+*.exe~
+*.so
+*.dylib
+*.dll
+
+# Config
+config.json
+
+# Test binaries
+*.test
+
+# Go workspace
+go.work
+go.work.sum
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
