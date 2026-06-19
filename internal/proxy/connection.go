@@ -162,11 +162,11 @@ func (c *Connection) injectPacketIfNeeded(data []byte) {
         return
     }
     
-    opcode := uint16(data[0]) | (uint16(data[1]) << 8)
+    //opcode := uint16(data[0]) | (uint16(data[1]) << 8)
     
     const TARGET_OPCODE = 0x0130
     
-    if opcode == TARGET_OPCODE {
+    /*if opcode == TARGET_OPCODE {
         c.injectionMutex.Lock()
         if c.capturedPacket == nil {
             c.capturedPacket = make([]byte, len(data))
@@ -196,5 +196,5 @@ func (c *Connection) injectPacketIfNeeded(data []byte) {
         } else {
             c.injectionMutex.Unlock()
         }
-    }
+    }*/
 }
