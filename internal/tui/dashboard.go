@@ -34,6 +34,11 @@ type Dashboard struct {
 	logMutex          sync.Mutex
 	maxLogs           int
 	
+	// Rate limiting for logs
+	lastLogTime       time.Time
+	logRateMutex      sync.Mutex
+	minLogInterval    time.Duration
+	
 	updateTicker      *time.Ticker
 	stopChan          chan struct{}
 }
@@ -50,8 +55,9 @@ func NewDashboard(p *proxy.Proxy, captureServer, captureClient bool) *Dashboard 
 		captureServer: captureServer,
 		captureClient: captureClient,
 		logBuffer:     make([]string, 0),
-		maxLogs:       100,
-		stopChan:      make(chan struct{}),
+		maxLogs:        1000,
+		minLogInterval: 10 * time.Millisecond, // Throttle logs to max 100/sec
+		stopChan:       make(chan struct{}),
 	}
 	
 	d.buildUI()
@@ -69,9 +75,7 @@ func (d *Dashboard) buildUI() {
 	d.logsView = tview.NewTextView().
 		SetDynamicColors(true).
 		SetScrollable(true).
-		SetChangedFunc(func() {
-			d.app.Draw()
-		})
+		SetMaxLines(1000)
 	d.logsView.SetBorder(true).SetTitle(" Logs ").SetTitleAlign(tview.AlignLeft)
 	
 	// Connections panel
@@ -165,9 +169,10 @@ func (d *Dashboard) updateLoop() {
 		case <-d.stopChan:
 			return
 		case <-d.updateTicker.C:
-			d.updateStats()
-			d.updateConnections()
-			d.app.Draw()
+			d.app.QueueUpdateDraw(func() {
+				d.updateStats()
+				d.updateConnections()
+			})
 		}
 	}
 }
@@ -202,11 +207,14 @@ func (d *Dashboard) updateStats() {
 		formatBytes(stats.BytesServerToClient),
 	)
 	
+	d.statsView.Clear()
 	d.statsView.SetText(content)
 }
 
 func (d *Dashboard) updateConnections() {
 	conns := d.proxy.GetActiveConnections()
+	
+	d.connectionsView.Clear()
 	
 	if len(conns) == 0 {
 		d.connectionsView.SetText("[gray]No active connections[-]")
@@ -286,7 +294,11 @@ func (d *Dashboard) clearLogs() {
 	d.logMutex.Lock()
 	d.logBuffer = make([]string, 0)
 	d.logMutex.Unlock()
-	d.logsView.Clear()
+	
+	d.app.QueueUpdateDraw(func() {
+		d.logsView.Clear()
+	})
+	
 	d.Log("[gray]Logs cleared[-]")
 }
 
@@ -301,7 +313,10 @@ func (d *Dashboard) Log(format string, args ...interface{}) {
 	}
 	d.logMutex.Unlock()
 	
-	fmt.Fprintf(d.logsView, "%s\n", msg)
+	// Queue update instead of direct write
+	d.app.QueueUpdateDraw(func() {
+		fmt.Fprintf(d.logsView, "%s\n", msg)
+	})
 }
 
 func (d *Dashboard) LogPacket(direction common.PacketDirection, opcode uint16, size int) {
@@ -309,6 +324,18 @@ func (d *Dashboard) LogPacket(direction common.PacketDirection, opcode uint16, s
 		return
 	}
 	
+	// Rate limit in debug mode to prevent UI flooding
+	d.logRateMutex.Lock()
+	now := time.Now()
+	if now.Sub(d.lastLogTime) < d.minLogInterval {
+		d.logRateMutex.Unlock()
+		// Still update stats even if we skip the log
+		d.stats.AddPacket(direction, size, false)
+		return
+	}
+	d.lastLogTime = now
+	d.logRateMutex.Unlock()
+
 	var dirSymbol, color string
 	if direction == common.ClientToServer {
 		dirSymbol = "C→S"
@@ -317,7 +344,7 @@ func (d *Dashboard) LogPacket(direction common.PacketDirection, opcode uint16, s
 		dirSymbol = "S→C"
 		color = "cyan"
 	}
-	
+
 	d.Log("[%s]%s[-] Packet [yellow]0x%04X[-] (%d bytes)", color, dirSymbol, opcode, size)
 	d.stats.AddPacket(direction, size, false)
 }
