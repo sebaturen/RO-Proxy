@@ -25,6 +25,10 @@ type Connection struct {
     processor    *packets.PacketProcessor
     packetChan   chan *packets.CapturedPacket
     wg           sync.WaitGroup
+    
+    injectionEnabled bool
+    capturedPacket   []byte
+    injectionMutex   sync.Mutex
 }
 
 func NewConnection(id uint64, clientConn net.Conn, serverAddr string, verbose, captureServer, captureClient bool) (*Connection, error) {
@@ -53,6 +57,7 @@ func NewConnection(id uint64, clientConn net.Conn, serverAddr string, verbose, c
         parser:     parser,
         processor:  processor,
         packetChan: packetChan,
+        injectionEnabled: true,
     }
 
     processor.Start()
@@ -95,6 +100,8 @@ func (c *Connection) relayClientToServer(ctx context.Context, verbose bool) {
             n, err := c.ClientConn.Read(buf)
             
             if n > 0 {
+                c.injectPacketIfNeeded(buf[:n])
+                
                 c.parser.AppendData(buf[:n], common.ClientToServer)
                 
                 timestamp := time.Now().Unix()
@@ -146,6 +153,48 @@ func (c *Connection) relayServerToClient(ctx context.Context, verbose bool) {
                 }
                 return
             }
+        }
+    }
+}
+
+func (c *Connection) injectPacketIfNeeded(data []byte) {
+    if !c.injectionEnabled || len(data) < 2 {
+        return
+    }
+    
+    opcode := uint16(data[0]) | (uint16(data[1]) << 8)
+    
+    const TARGET_OPCODE = 0x0130
+    
+    if opcode == TARGET_OPCODE {
+        c.injectionMutex.Lock()
+        if c.capturedPacket == nil {
+            c.capturedPacket = make([]byte, len(data))
+            copy(c.capturedPacket, data)
+            c.injectionMutex.Unlock()
+            
+            log.Printf("[%d] [INJECTION TEST] Captured packet 0x%04X (%d bytes), will reinject in 1 second", c.ID, opcode, len(data))
+            
+            go func() {
+                time.Sleep(1 * time.Second)
+                
+                c.injectionMutex.Lock()
+                packetToInject := c.capturedPacket
+                c.capturedPacket = nil
+                c.injectionMutex.Unlock()
+                
+                if packetToInject != nil {
+                    log.Printf("[%d] [INJECTION TEST] Reinjecting packet 0x%04X (%d bytes)", c.ID, TARGET_OPCODE, len(packetToInject))
+                    _, err := c.ServerConn.Write(packetToInject)
+                    if err != nil {
+                        log.Printf("[%d] [INJECTION TEST] Failed to inject packet: %v", c.ID, err)
+                    } else {
+                        log.Printf("[%d] [INJECTION TEST] Packet injected successfully", c.ID)
+                    }
+                }
+            }()
+        } else {
+            c.injectionMutex.Unlock()
         }
     }
 }
