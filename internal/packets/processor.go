@@ -87,8 +87,8 @@ func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
 
     if pp.verbose {
         logMsg := fmt.Sprintf("[%d] [%s] [0x%04X][%s] size=%d payload=%X", packet.ConnectionID, dirStr, packet.Opcode, spec.Desc, packet.Size, packet.Payload)
-        if packet.SecurityByte != nil {
-            logMsg += fmt.Sprintf(" security_byte=0x%02X", *packet.SecurityByte)
+        if packet.Checksum != nil {
+            logMsg += fmt.Sprintf(" checksum=0x%02X", *packet.Checksum)
         }
         log.Println(logMsg)
     } else {
