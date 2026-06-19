@@ -3,7 +3,6 @@ package proxy
 import (
     "context"
     "fmt"
-    "log"
     "net"
     "sync"
     "sync/atomic"
@@ -58,8 +57,6 @@ func (p *Proxy) Start(ctx context.Context) error {
     p.listener = listener
     defer listener.Close()
 
-    log.Printf("Proxy listening on %s", addr)
-
     go func() {
         <-ctx.Done()
         listener.Close()
@@ -70,10 +67,8 @@ func (p *Proxy) Start(ctx context.Context) error {
         if err != nil {
             select {
             case <-ctx.Done():
-                log.Println("Listener closed, shutting down")
                 return nil
             default:
-                log.Printf("Accept error: %v", err)
                 continue
             }
         }
@@ -84,36 +79,26 @@ func (p *Proxy) Start(ctx context.Context) error {
 
 func (p *Proxy) handleConnection(ctx context.Context, clientConn net.Conn) {
     connID := p.nextConnID.Add(1)
-    clientAddr := clientConn.RemoteAddr().String()
-    log.Printf("[%d] New connection from %s", connID, clientAddr)
 
     originalDest, err := getOriginalDest(clientConn)
     if err != nil {
-        log.Printf("[%d] Failed to get original destination: %v", connID, err)
         clientConn.Close()
         return
     }
 
-    log.Printf("[%d] Original destination: %s", connID, originalDest)
-
     destIP, _, err := net.SplitHostPort(originalDest)
     if err != nil {
-        log.Printf("[%d] Failed to parse destination address: %v", connID, err)
         clientConn.Close()
         return
     }
 
     if !p.allowedIPsMap[destIP] {
-        log.Printf("[%d] Rejected connection to unauthorized IP: %s", connID, destIP)
         clientConn.Close()
         return
     }
 
-    log.Printf("[%d] Validated target IP: %s", connID, destIP)
-
-    conn, err := NewConnection(connID, clientConn, originalDest, p.verbose, p.captureServer, p.captureClient)
+    conn, err := NewConnection(connID, clientConn, originalDest, p.verbose, p)
     if err != nil {
-        log.Printf("[%d] Failed to connect to target %s: %v", connID, originalDest, err)
         clientConn.Close()
         return
     }
@@ -132,9 +117,6 @@ func (p *Proxy) handleConnection(ctx context.Context, clientConn net.Conn) {
         p.connMutex.Unlock()
 
         conn.Close()
-        if p.verbose {
-            log.Printf("[%d] Connection closed", connID)
-        }
     }()
 
     conn.Start(ctx, p.verbose)
@@ -177,6 +159,14 @@ func (p *Proxy) GetActiveConnections() []*Connection {
         conns = append(conns, conn)
     }
     return conns
+}
+
+func (p *Proxy) GetCaptureServer() bool {
+	return p.captureServer
+}
+
+func (p *Proxy) GetCaptureClient() bool {
+	return p.captureClient
 }
 
 func (p *Proxy) SetCaptureServer(enabled bool) {

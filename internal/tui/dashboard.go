@@ -2,14 +2,41 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
-	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 	"roproxy/internal/common"
 	"roproxy/internal/proxy"
 )
+
+// Build version - set at compile time via ldflags
+var BuildVersion = "dev"
+
+type DebugMode int
+
+const (
+	DebugOff DebugMode = iota
+	DebugOn
+	DebugVerbose
+	DebugVeryVerbose
+)
+
+func (d DebugMode) String() string {
+	switch d {
+	case DebugOff:
+		return "OFF"
+	case DebugOn:
+		return "ON"
+	case DebugVerbose:
+		return "VERBOSE"
+	case DebugVeryVerbose:
+		return "VERY VERBOSE"
+	default:
+		return "UNKNOWN"
+	}
+}
 
 type Dashboard struct {
 	app               *tview.Application
@@ -20,14 +47,23 @@ type Dashboard struct {
 	statsView         *tview.TextView
 	logsView          *tview.TextView
 	connectionsView   *tview.TextView
-	controlsView      *tview.TextView
+	controlsView      *tview.Flex
+	controlsText      *tview.TextView
+	filterInput       *tview.InputField
 	statusBar         *tview.TextView
+	rootFlex          *tview.Flex
 	
 	// Settings
-	debugMode         bool
+	debugMode         DebugMode
 	showWarnings      bool
 	captureServer     bool
 	captureClient     bool
+	fullTimestamp     bool
+	connectionFilter  uint64  // 0 = show all
+	filterActive      bool
+	recording         bool
+	recordFile        *os.File
+	recordMutex       sync.Mutex
 	
 	// Log buffer
 	logBuffer         []string
@@ -47,103 +83,24 @@ func NewDashboard(p *proxy.Proxy, captureServer, captureClient bool) *Dashboard 
 	app := tview.NewApplication()
 	
 	d := &Dashboard{
-		app:           app,
-		proxy:         p,
-		stats:         NewStats(),
-		debugMode:     false,
-		showWarnings:  true,
-		captureServer: captureServer,
-		captureClient: captureClient,
-		logBuffer:     make([]string, 0),
-		maxLogs:        1000,
-		minLogInterval: 10 * time.Millisecond, // Throttle logs to max 100/sec
-		stopChan:       make(chan struct{}),
+		app:              app,
+		proxy:            p,
+		stats:            NewStats(),
+		debugMode:        DebugOff,
+		showWarnings:     true,
+		captureServer:    captureServer,
+		captureClient:    captureClient,
+		fullTimestamp:    false,
+		connectionFilter: 0,
+		filterActive:     false,
+		logBuffer:        make([]string, 0),
+		maxLogs:          1000,
+		minLogInterval:   10 * time.Millisecond,
+		stopChan:         make(chan struct{}),
 	}
 	
 	d.buildUI()
 	return d
-}
-
-func (d *Dashboard) buildUI() {
-	// Stats panel
-	d.statsView = tview.NewTextView().
-		SetDynamicColors(true).
-		SetScrollable(false)
-	d.statsView.SetBorder(true).SetTitle(" Statistics ").SetTitleAlign(tview.AlignLeft)
-	
-	// Logs panel
-	d.logsView = tview.NewTextView().
-		SetDynamicColors(true).
-		SetScrollable(true).
-		SetMaxLines(1000)
-	d.logsView.SetBorder(true).SetTitle(" Logs ").SetTitleAlign(tview.AlignLeft)
-	
-	// Connections panel
-	d.connectionsView = tview.NewTextView().
-		SetDynamicColors(true).
-		SetScrollable(true)
-	d.connectionsView.SetBorder(true).SetTitle(" Active Connections ").SetTitleAlign(tview.AlignLeft)
-	
-	// Controls panel
-	d.controlsView = tview.NewTextView().
-		SetDynamicColors(true).
-		SetScrollable(false)
-	d.controlsView.SetBorder(true).SetTitle(" Controls ").SetTitleAlign(tview.AlignLeft)
-	d.updateControlsView()
-	
-	// Status bar
-	d.statusBar = tview.NewTextView().
-		SetDynamicColors(true).
-		SetTextAlign(tview.AlignCenter)
-	d.statusBar.SetBackgroundColor(tcell.ColorDarkGreen)
-	d.updateStatusBar()
-	
-	// Layout
-	leftColumn := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(d.statsView, 12, 0, false).
-		AddItem(d.controlsView, 10, 0, false).
-		AddItem(d.connectionsView, 0, 1, false)
-	
-	mainFlex := tview.NewFlex().
-		AddItem(leftColumn, 0, 1, false).
-		AddItem(d.logsView, 0, 2, false)
-	
-	rootFlex := tview.NewFlex().SetDirection(tview.FlexRow).
-		AddItem(mainFlex, 0, 1, false).
-		AddItem(d.statusBar, 1, 0, false)
-	
-	// Key bindings
-	d.app.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
-		switch event.Rune() {
-		case 'd', 'D':
-			d.toggleDebugMode()
-			return nil
-		case 'w', 'W':
-			d.toggleWarnings()
-			return nil
-		case 's', 'S':
-			d.toggleCaptureServer()
-			return nil
-		case 'c', 'C':
-			d.toggleCaptureClient()
-			return nil
-		case 'l', 'L':
-			d.clearLogs()
-			return nil
-		case 'q', 'Q':
-			d.app.Stop()
-			return nil
-		}
-		
-		if event.Key() == tcell.KeyCtrlC {
-			d.app.Stop()
-			return nil
-		}
-		
-		return event
-	})
-	
-	d.app.SetRoot(rootFlex, true)
 }
 
 func (d *Dashboard) Start() error {
@@ -156,6 +113,14 @@ func (d *Dashboard) Start() error {
 }
 
 func (d *Dashboard) Stop() {
+	// Close recording file if open
+	d.recordMutex.Lock()
+	if d.recordFile != nil {
+		d.recordFile.Close()
+		d.recordFile = nil
+	}
+	d.recordMutex.Unlock()
+	
 	if d.updateTicker != nil {
 		d.updateTicker.Stop()
 	}
@@ -232,28 +197,52 @@ func (d *Dashboard) updateConnections() {
 }
 
 func (d *Dashboard) updateControlsView() {
-	debugStatus := colorBool(d.debugMode, "ON", "OFF")
+	debugStatus := fmt.Sprintf("[yellow]%s[-]", d.debugMode.String())
 	warningsStatus := colorBool(d.showWarnings, "ON", "OFF")
 	serverStatus := colorBool(d.captureServer, "ON", "OFF")
 	clientStatus := colorBool(d.captureClient, "ON", "OFF")
+	timestampStatus := colorBool(d.fullTimestamp, "FULL", "TIME")
 	
-	content := fmt.Sprintf(`[yellow]D[-] Debug Mode:    %s
-[yellow]W[-] Show Warnings: %s
-[yellow]S[-] Capture S→C:  %s
-[yellow]C[-] Capture C→S:  %s
+	d.recordMutex.Lock()
+	recordingStatus := colorBool(d.recording, "ON", "OFF")
+	d.recordMutex.Unlock()
+	
+	filterText := "[white]ALL[-]"
+	if d.connectionFilter > 0 {
+		filterText = fmt.Sprintf("[yellow]#%d[-]", d.connectionFilter)
+	}
+	
+	content := fmt.Sprintf(`[yellow]D[-] Debug:    %s
+[yellow]W[-] Warnings: %s
+[yellow]S[-] S→C:      %s
+[yellow]C[-] C→S:      %s
+[yellow]T[-] Time:     %s
+[yellow]F[-] Filter:   %s
+[yellow]R[-] Record:   %s
+
 [yellow]L[-] Clear Logs
-[yellow]Q[-] Quit`,
+[yellow]Q[-] Quit
+[gray]Ctrl+C/Ctrl+D/Q: force quit[-]`,
 		debugStatus,
 		warningsStatus,
 		serverStatus,
 		clientStatus,
+		timestampStatus,
+		filterText,
+		recordingStatus,
 	)
 	
-	d.controlsView.SetText(content)
+	d.controlsText.SetText(content)
+	
+	// Show/hide filter input
+	if !d.filterActive {
+		d.filterInput.SetLabel("")
+		d.filterInput.SetText("")
+	}
 }
 
 func (d *Dashboard) updateStatusBar() {
-	status := "[green]● ROProxy Running[-]"
+	status := fmt.Sprintf("[white]ROProxy Running - v%s", BuildVersion)
 	if !d.captureServer && !d.captureClient {
 		status = "[red]● WARNING: All capture disabled[-]"
 	}
@@ -262,31 +251,69 @@ func (d *Dashboard) updateStatusBar() {
 }
 
 func (d *Dashboard) toggleDebugMode() {
-	d.debugMode = !d.debugMode
-	d.updateControlsView()
-	d.updateStatusBar()
-	d.Log("[yellow]Debug mode: %s[-]", colorBool(d.debugMode, "ON", "OFF"))
+	// Cycle through: OFF -> ON -> VERBOSE -> VERY VERBOSE -> OFF
+	d.debugMode = (d.debugMode + 1) % 4
+	d.app.QueueUpdateDraw(func() {
+		d.updateControlsView()
+		d.updateStatusBar()
+	})
+	d.Log("[yellow]Debug mode: %s[-]", d.debugMode.String())
 }
 
 func (d *Dashboard) toggleWarnings() {
 	d.showWarnings = !d.showWarnings
-	d.updateControlsView()
+	d.app.QueueUpdateDraw(func() {
+		d.updateControlsView()
+	})
 	d.Log("[yellow]Warnings: %s[-]", colorBool(d.showWarnings, "ON", "OFF"))
 }
 
 func (d *Dashboard) toggleCaptureServer() {
 	d.captureServer = !d.captureServer
 	d.proxy.SetCaptureServer(d.captureServer)
-	d.updateControlsView()
-	d.updateStatusBar()
+	d.app.QueueUpdateDraw(func() {
+		d.updateControlsView()
+		d.updateStatusBar()
+	})
 	d.Log("[cyan]Server→Client capture: %s[-]", colorBool(d.captureServer, "ON", "OFF"))
+}
+
+func (d *Dashboard) toggleTimestamp() {
+	d.fullTimestamp = !d.fullTimestamp
+	d.app.QueueUpdateDraw(func() {
+		d.updateControlsView()
+	})
+	if d.fullTimestamp {
+		d.Log("[yellow]Timestamp: FULL (date + time)[-]")
+	} else {
+		d.Log("[yellow]Timestamp: TIME ONLY[-]")
+	}
+}
+
+func (d *Dashboard) promptConnectionFilter() {
+	d.filterActive = true
+	// Set initial value
+	if d.connectionFilter > 0 {
+		d.filterInput.SetText(fmt.Sprintf("%d", d.connectionFilter))
+	} else {
+		d.filterInput.SetText("")
+	}
+	d.filterInput.SetLabel("[yellow]→ Conn ID (Enter=apply, ESC=cancel, Q=quit): [-]")
+	
+	d.app.QueueUpdateDraw(func() {
+		// Remove border to avoid "?" characters on SSH
+		d.controlsView.SetBorder(false)
+		d.app.SetFocus(d.filterInput)
+	})
 }
 
 func (d *Dashboard) toggleCaptureClient() {
 	d.captureClient = !d.captureClient
 	d.proxy.SetCaptureClient(d.captureClient)
-	d.updateControlsView()
-	d.updateStatusBar()
+	d.app.QueueUpdateDraw(func() {
+		d.updateControlsView()
+		d.updateStatusBar()
+	})
 	d.Log("[green]Client→Server capture: %s[-]", colorBool(d.captureClient, "ON", "OFF"))
 }
 
@@ -303,8 +330,8 @@ func (d *Dashboard) clearLogs() {
 }
 
 func (d *Dashboard) Log(format string, args ...interface{}) {
-	timestamp := time.Now().Format("15:04:05")
-	msg := fmt.Sprintf("[gray]%s[-] %s", timestamp, fmt.Sprintf(format, args...))
+	timestamp := time.Now().Format("2006-01-02 15:04:05.000")
+	msg := fmt.Sprintf("[white]%s %s[-]", timestamp, fmt.Sprintf(format, args...))
 	
 	d.logMutex.Lock()
 	d.logBuffer = append(d.logBuffer, msg)
@@ -319,51 +346,85 @@ func (d *Dashboard) Log(format string, args ...interface{}) {
 	})
 }
 
-func (d *Dashboard) LogPacket(direction common.PacketDirection, opcode uint16, size int) {
-	if !d.debugMode {
-		return
-	}
-	
-	// Rate limit in debug mode to prevent UI flooding
-	d.logRateMutex.Lock()
-	now := time.Now()
-	if now.Sub(d.lastLogTime) < d.minLogInterval {
-		d.logRateMutex.Unlock()
-		// Still update stats even if we skip the log
+func (d *Dashboard) LogPacket(connID uint64, direction common.PacketDirection, opcode uint16, size int, desc string, payload []byte, checksum *uint8) {
+	if d.debugMode == DebugOff {
 		d.stats.AddPacket(direction, size, false)
 		return
 	}
-	d.lastLogTime = now
-	d.logRateMutex.Unlock()
-
-	var dirSymbol, color string
-	if direction == common.ClientToServer {
-		dirSymbol = "C→S"
-		color = "green"
-	} else {
-		dirSymbol = "S→C"
-		color = "cyan"
-	}
-
-	d.Log("[%s]%s[-] Packet [yellow]0x%04X[-] (%d bytes)", color, dirSymbol, opcode, size)
-	d.stats.AddPacket(direction, size, false)
-}
-
-func (d *Dashboard) LogUnknown(direction common.PacketDirection, opcode uint16, size int) {
-	if !d.showWarnings {
+	
+	if d.connectionFilter > 0 && d.connectionFilter != connID {
+		d.stats.AddPacket(direction, size, false)
 		return
 	}
 	
-	var dirSymbol, color string
-	if direction == common.ClientToServer {
-		dirSymbol = "C→S"
-		color = "green"
-	} else {
-		dirSymbol = "S→C"
-		color = "cyan"
+	timestamp := formatTimestamp(d.fullTimestamp)
+	dirSymbol, color := formatDirection(direction)
+	checksumStr := formatChecksum(checksum)
+	descDisplay := formatDesc(desc)
+	
+	var msg string
+	switch d.debugMode {
+	case DebugOn:
+		msg = fmt.Sprintf("[gray]%s[-][yellow][#%d][-][%s][%s][-][yellow][0x%04X][-][white]%s size=%d%s[-]",
+			timestamp, connID, color, dirSymbol, opcode, descDisplay, size, checksumStr)
+	case DebugVerbose:
+		payloadHex := formatPayload(payload, true)
+		msg = fmt.Sprintf("[gray]%s[-][yellow][#%d][-][%s][%s][-][yellow][0x%04X][-][white]%s size=%d%s payload=%s[-]",
+			timestamp, connID, color, dirSymbol, opcode, descDisplay, size, checksumStr, payloadHex)
+	case DebugVeryVerbose:
+		payloadHex := formatPayload(payload, false)
+		msg = fmt.Sprintf("[gray]%s[-][yellow][#%d][-][%s][%s][-][yellow][0x%04X][-][white]%s size=%d%s payload=%s[-]",
+			timestamp, connID, color, dirSymbol, opcode, descDisplay, size, checksumStr, payloadHex)
 	}
 	
-	d.Log("[red]⚠[-] [%s]%s[-] Unknown packet [yellow]0x%04X[-] (%d bytes)", color, dirSymbol, opcode, size)
+	d.writeToRecording(connID, direction, opcode, payload, checksum)
+	
+	d.logMutex.Lock()
+	d.logBuffer = append(d.logBuffer, msg)
+	if len(d.logBuffer) > d.maxLogs {
+		d.logBuffer = d.logBuffer[1:]
+	}
+	d.logMutex.Unlock()
+	
+	d.app.QueueUpdateDraw(func() {
+		fmt.Fprintf(d.logsView, "%s\n", msg)
+	})
+	
+	d.stats.AddPacket(direction, size, false)
+}
+
+func (d *Dashboard) LogUnknown(connID uint64, direction common.PacketDirection, opcode uint16, size int, payload []byte, checksum *uint8) {
+	if !d.showWarnings {
+		d.stats.AddPacket(direction, size, true)
+		return
+	}
+	
+	if d.connectionFilter > 0 && d.connectionFilter != connID {
+		d.stats.AddPacket(direction, size, true)
+		return
+	}
+
+	timestamp := formatTimestamp(d.fullTimestamp)
+	dirSymbol, color := formatDirection(direction)
+	checksumStr := formatChecksum(checksum)
+	payloadHex := formatPayload(payload, true)
+	
+	msg := fmt.Sprintf("[white][%s][#%d] [red][⚠][-][%s][%s][-][yellow][0x%04X][-][red][UNKNOWN][-][white] size=%d%s payload=%s[-]",
+		timestamp, connID, color, dirSymbol, opcode, size, checksumStr, payloadHex)
+	
+	d.writeToRecording(connID, direction, opcode, payload, checksum)
+	
+	d.logMutex.Lock()
+	d.logBuffer = append(d.logBuffer, msg)
+	if len(d.logBuffer) > d.maxLogs {
+		d.logBuffer = d.logBuffer[1:]
+	}
+	d.logMutex.Unlock()
+	
+	d.app.QueueUpdateDraw(func() {
+		fmt.Fprintf(d.logsView, "%s\n", msg)
+	})
+	
 	d.stats.AddPacket(direction, size, true)
 }
 
@@ -392,7 +453,7 @@ func (d *Dashboard) GetStats() *Stats {
 }
 
 func (d *Dashboard) IsDebugMode() bool {
-	return d.debugMode
+	return d.debugMode != DebugOff
 }
 
 func (d *Dashboard) IsShowWarnings() bool {
