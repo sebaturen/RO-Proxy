@@ -11,6 +11,7 @@ import (
     "unsafe"
 
     "roproxy/internal/config"
+    "roproxy/internal/packets"
 )
 
 const SO_ORIGINAL_DST = 80
@@ -25,6 +26,7 @@ type Proxy struct {
     verbose       bool
     captureServer bool
     captureClient bool
+    packetLogger  packets.PacketLogger
 }
 
 func New(cfg *config.Config, verbose, captureServer, captureClient bool) *Proxy {
@@ -41,6 +43,10 @@ func New(cfg *config.Config, verbose, captureServer, captureClient bool) *Proxy 
         captureServer: captureServer,
         captureClient: captureClient,
     }
+}
+
+func (p *Proxy) SetPacketLogger(logger packets.PacketLogger) {
+	p.packetLogger = logger
 }
 
 func (p *Proxy) Start(ctx context.Context) error {
@@ -112,6 +118,10 @@ func (p *Proxy) handleConnection(ctx context.Context, clientConn net.Conn) {
         return
     }
 
+    if p.packetLogger != nil {
+        conn.SetLogger(p.packetLogger)
+    }
+
     p.connMutex.Lock()
     p.connections[connID] = conn
     p.connMutex.Unlock()
@@ -158,22 +168,6 @@ func getOriginalDest(conn net.Conn) (string, error) {
     return fmt.Sprintf("%s:%d", ip.String(), port), nil
 }
 
-func getsockopt(fd, level, optname int, optval unsafe.Pointer, optlen *uint32) error {
-    _, _, errno := syscall.Syscall6(
-        syscall.SYS_GETSOCKOPT,
-        uintptr(fd),
-        uintptr(level),
-        uintptr(optname),
-        uintptr(optval),
-        uintptr(unsafe.Pointer(optlen)),
-        0,
-    )
-    if errno != 0 {
-        return errno
-    }
-    return nil
-}
-
 func (p *Proxy) GetActiveConnections() []*Connection {
     p.connMutex.RLock()
     defer p.connMutex.RUnlock()
@@ -183,4 +177,12 @@ func (p *Proxy) GetActiveConnections() []*Connection {
         conns = append(conns, conn)
     }
     return conns
+}
+
+func (p *Proxy) SetCaptureServer(enabled bool) {
+    p.captureServer = enabled
+}
+
+func (p *Proxy) SetCaptureClient(enabled bool) {
+    p.captureClient = enabled
 }

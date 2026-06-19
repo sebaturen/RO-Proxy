@@ -4,8 +4,6 @@ import (
     "context"
     "flag"
     "fmt"
-    "io"
-    "log"
     "os"
     "os/signal"
     "sync"
@@ -15,25 +13,18 @@ import (
     "roproxy/internal/common"
     "roproxy/internal/config"
     "roproxy/internal/proxy"
+    "roproxy/internal/tui"
 )
 
 var (
-    verbose       bool
     captureServer bool
     captureClient bool
 )
 
 func main() {
-    flag.BoolVar(&verbose, "logs", false, "Enable verbose logging")
     flag.BoolVar(&captureServer, "capture-server", true, "Capture server->client packets")
     flag.BoolVar(&captureClient, "capture-client", true, "Capture client->server packets")
     flag.Parse()
-
-    if !verbose {
-        log.SetOutput(io.Discard)
-    } else {
-        log.SetFlags(log.LstdFlags | log.Lshortfile)
-    }
 
     fmt.Println("ROProxy - Transparent TCP Proxy")
 
@@ -47,12 +38,8 @@ func main() {
         cfg.ListenPort, len(cfg.TargetIPs))
 
     if cfg.API != nil && cfg.API.URL != "" && cfg.API.Key != "" {
-        common.InitAPIConsumer(cfg.API.URL, cfg.API.Key, verbose)
+        common.InitAPIConsumer(cfg.API.URL, cfg.API.Key, false)
         fmt.Printf("API consumer initialized: %s\n", cfg.API.URL)
-    }
-
-    if verbose {
-        fmt.Println("Verbose logging enabled")
     }
 
     if err := proxy.VerifyIPTablesSetup(); err != nil {
@@ -69,44 +56,47 @@ func main() {
         os.Exit(1)
     }
 
-    fmt.Println("iptables configured successfully:")
-    fmt.Print(proxy.GetIPTablesStatus(cfg.ListenPort))
-
-    if verbose {
-        captureInfo := "Capturing: "
-        if captureServer && captureClient {
-            captureInfo += "server->client + client->server"
-        } else if captureServer {
-            captureInfo += "server->client only"
-        } else if captureClient {
-            captureInfo += "client->server only"
-        } else {
-            captureInfo += "NONE (all disabled)"
-        }
-        fmt.Println(captureInfo)
-    }
+    fmt.Println("iptables configured successfully")
+    time.Sleep(1 * time.Second) // Give user time to read messages
 
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
     defer proxy.CleanupIPTables(cfg.ListenPort)
 
-    p := proxy.New(cfg, verbose, captureServer, captureClient)
-
-    sigChan := make(chan os.Signal, 1)
-    signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+    p := proxy.New(cfg, false, captureServer, captureClient)
+    dashboard := tui.NewDashboard(p, captureServer, captureClient)
+    p.SetPacketLogger(dashboard)
 
     var wg sync.WaitGroup
+
+    // Start proxy in background
     wg.Add(1)
     go func() {
         defer wg.Done()
         if err := p.Start(ctx); err != nil {
-            fmt.Printf("Proxy failed: %v\n", err)
-            os.Exit(1)
+            dashboard.Log("[red]Proxy failed: %v[-]", err)
         }
     }()
 
-    <-sigChan
-    fmt.Println("Shutdown signal received, stopping proxy...")
+    // Handle signals
+    sigChan := make(chan os.Signal, 1)
+    signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
+    go func() {
+        <-sigChan
+        dashboard.Log("[yellow]Shutdown signal received[-]")
+        dashboard.Stop()
+    }()
+
+    dashboard.Log("[green]ROProxy started successfully[-]")
+    dashboard.Log("[yellow]Listening on port %d[-]", cfg.ListenPort)
+    dashboard.Log("[gray]Use keyboard controls to interact (Q to quit)[-]")
+
+    // Run dashboard (blocks until quit)
+    if err := dashboard.Start(); err != nil {
+        fmt.Printf("Dashboard error: %v\n", err)
+    }
+
+    // Cleanup
     cancel()
 
     shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -120,8 +110,8 @@ func main() {
 
     select {
     case <-done:
-        fmt.Println("Proxy stopped gracefully")
+        fmt.Println("\nProxy stopped gracefully")
     case <-shutdownCtx.Done():
-        fmt.Println("Shutdown timeout exceeded, forcing exit")
+        fmt.Println("\nShutdown timeout exceeded, forcing exit")
     }
 }

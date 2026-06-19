@@ -10,6 +10,13 @@ import (
     "roproxy/internal/packets/send"
 )
 
+type PacketLogger interface {
+    LogPacket(direction common.PacketDirection, opcode uint16, size int)
+    LogUnknown(direction common.PacketDirection, opcode uint16, size int)
+    IsDebugMode() bool
+    IsShowWarnings() bool
+}
+
 type PacketProcessor struct {
     connID      uint64
     packetChan  <-chan *CapturedPacket
@@ -17,6 +24,7 @@ type PacketProcessor struct {
     verbose     bool
     captureServer   bool
     captureClient   bool
+    logger        PacketLogger
 }
 
 func NewPacketProcessor(connID uint64, packetChan <-chan *CapturedPacket, verbose, captureServer, captureClient bool) *PacketProcessor {
@@ -28,6 +36,10 @@ func NewPacketProcessor(connID uint64, packetChan <-chan *CapturedPacket, verbos
         captureServer: captureServer,
         captureClient: captureClient,
     }
+}
+
+func (pp *PacketProcessor) SetLogger(logger PacketLogger) {
+    pp.logger = logger
 }
 
 func (pp *PacketProcessor) Start() {
@@ -70,7 +82,10 @@ func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
     }
     
     if spec == nil {
-        if pp.verbose {
+        // Unknown packet
+        if pp.logger != nil && pp.logger.IsShowWarnings() {
+            pp.logger.LogUnknown(packet.Direction, packet.Opcode, int(packet.Size))
+        } else if pp.verbose {
             dirStr := "S->C"
             if packet.Direction == common.ClientToServer {
                 dirStr = "C->S"
@@ -80,18 +95,24 @@ func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
         return
     }
 
-    dirStr := "S->C"
-    if packet.Direction == common.ClientToServer {
-        dirStr = "C->S"
-    }
-
-    if pp.verbose {
+    // Known packet
+    if pp.logger != nil && pp.logger.IsDebugMode() {
+        pp.logger.LogPacket(packet.Direction, packet.Opcode, int(packet.Size))
+    } else if pp.verbose {
+        dirStr := "S->C"
+        if packet.Direction == common.ClientToServer {
+            dirStr = "C->S"
+        }
         logMsg := fmt.Sprintf("[%d] [%s] [0x%04X][%s] size=%d payload=%X", packet.ConnectionID, dirStr, packet.Opcode, spec.Desc, packet.Size, packet.Payload)
         if packet.Checksum != nil {
             logMsg += fmt.Sprintf(" checksum=0x%02X", *packet.Checksum)
         }
         log.Println(logMsg)
-    } else {
+    } else if !pp.verbose && pp.logger == nil {
+        dirStr := "S->C"
+        if packet.Direction == common.ClientToServer {
+            dirStr = "C->S"
+        }
         fmt.Printf("[%d] [%s] [0x%04X][%s]\n", packet.ConnectionID, dirStr, packet.Opcode, spec.Desc)
     }
 
@@ -116,6 +137,10 @@ func (pp *PacketProcessor) processPacket(packet *CapturedPacket) {
         err := spec.Handler.Deserialize()
         if err != nil {
             if pp.verbose {
+                dirStr := "S->C"
+                if packet.Direction == common.ClientToServer {
+                	dirStr = "C->S"
+                }
                 log.Printf("[%d] [%s] Deserialization error for 0x%04X: %v", packet.ConnectionID, dirStr, packet.Opcode, err)
             }
         }

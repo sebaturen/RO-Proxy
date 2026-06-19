@@ -25,6 +25,17 @@ type APIConsumer struct {
 
 var globalAPIConsumer *APIConsumer
 
+func GetAPIConsumer() *APIConsumer {
+	return globalAPIConsumer
+}
+
+func (ac *APIConsumer) QueueSize() int {
+	if ac == nil {
+		return 0
+	}
+	return len(ac.queue)
+}
+
 func InitAPIConsumer(baseURL, apiKey string, verbose bool) {
     if baseURL == "" || apiKey == "" {
         return

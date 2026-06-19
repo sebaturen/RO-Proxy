@@ -65,6 +65,10 @@ func NewConnection(id uint64, clientConn net.Conn, serverAddr string, verbose, c
     return conn, nil
 }
 
+func (c *Connection) SetLogger(logger packets.PacketLogger) {
+    c.processor.SetLogger(logger)
+}
+
 func (c *Connection) Start(ctx context.Context, verbose bool) {
     if verbose {
         log.Printf("[%d] Established relay: %s <-> %s", c.ID, c.ClientAddr, c.ServerAddr)
