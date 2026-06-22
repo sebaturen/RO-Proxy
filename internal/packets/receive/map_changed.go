@@ -1,7 +1,6 @@
 package receive
 
 import (
-    "log"
     "roproxy/internal/common"
 )
 
@@ -14,9 +13,11 @@ func (m *MapChanged) Deserialize() error {
     coordX := common.ReadUint16LE(m.Payload, 18)
     coordY := common.ReadUint16LE(m.Payload, 20)
 
+    common.LogToUI("[yellow][DEBUG MapChanged] ConnID=%d, SourceIP='%s', mapName='%s', coords=(%d,%d)[-]", m.ConnID, m.SourceIP, mapName, coordX, coordY)
+
     SetConnectionMap(m.ConnID, mapName)
     SetPendingMapChange(m.SourceIP, mapName, coordX, coordY)
     
-    log.Printf("[%d] Map changed to: %s (X:%d Y:%d) - Pending match for %s", m.ConnID, mapName, coordX, coordY, m.SourceIP)
+    common.LogToUI("[green][%d] Map changed to: %s (X:%d Y:%d) - Pending match for %s[-]", m.ConnID, mapName, coordX, coordY, m.SourceIP)
     return nil
 }

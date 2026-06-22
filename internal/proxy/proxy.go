@@ -7,10 +7,11 @@ import (
     "sync"
     "sync/atomic"
     "syscall"
+    "time"
     "unsafe"
 
+    "roproxy/internal/common"
     "roproxy/internal/config"
-    "roproxy/internal/packets"
 )
 
 const SO_ORIGINAL_DST = 80
@@ -21,31 +22,29 @@ type Proxy struct {
     connections   map[uint64]*Connection
     connMutex     sync.RWMutex
     nextConnID    atomic.Uint64
-    allowedIPsMap map[string]bool
     verbose       bool
     captureServer bool
     captureClient bool
-    packetLogger  packets.PacketLogger
 }
 
 func New(cfg *config.Config, verbose, captureServer, captureClient bool) *Proxy {
-    allowedIPs := make(map[string]bool)
-    for _, ip := range cfg.TargetIPs {
-        allowedIPs[ip] = true
-    }
-
     return &Proxy{
         cfg:           cfg,
         connections:   make(map[uint64]*Connection),
-        allowedIPsMap: allowedIPs,
         verbose:       verbose,
         captureServer: captureServer,
         captureClient: captureClient,
     }
 }
 
-func (p *Proxy) SetPacketLogger(logger packets.PacketLogger) {
-	p.packetLogger = logger
+// GetCaptureServer implements CaptureSettings interface
+func (p *Proxy) GetCaptureServer() bool {
+    return p.captureServer
+}
+
+// GetCaptureClient implements CaptureSettings interface
+func (p *Proxy) GetCaptureClient() bool {
+    return p.captureClient
 }
 
 func (p *Proxy) Start(ctx context.Context) error {
@@ -78,34 +77,28 @@ func (p *Proxy) Start(ctx context.Context) error {
 }
 
 func (p *Proxy) handleConnection(ctx context.Context, clientConn net.Conn) {
+    startTime := time.Now()
     connID := p.nextConnID.Add(1)
+    
+    common.LogToUI("[gray][DEBUG] Connection #%d: Client connected from %s (handleConnection started)[-]", connID, clientConn.RemoteAddr().String())
 
     originalDest, err := getOriginalDest(clientConn)
     if err != nil {
+        common.LogToUI("[red][DEBUG] Connection #%d: getOriginalDest FAILED: %v[-]", connID, err)
         clientConn.Close()
         return
     }
-
-    destIP, _, err := net.SplitHostPort(originalDest)
-    if err != nil {
-        clientConn.Close()
-        return
-    }
-
-    if !p.allowedIPsMap[destIP] {
-        clientConn.Close()
-        return
-    }
+    afterGetDest := time.Now()
+    common.LogToUI("[gray][DEBUG] Connection #%d: getOriginalDest=%dms, dest=%s[-]", connID, afterGetDest.Sub(startTime).Milliseconds(), originalDest)
 
     conn, err := NewConnection(connID, clientConn, originalDest, p.verbose, p)
     if err != nil {
+        common.LogToUI("[red][DEBUG] Connection #%d: NewConnection FAILED: %v[-]", connID, err)
         clientConn.Close()
         return
     }
-
-    if p.packetLogger != nil {
-        conn.SetLogger(p.packetLogger)
-    }
+    afterNewConn := time.Now()
+    common.LogToUI("[gray][DEBUG] Connection #%d: NewConnection=%dms (dial to %s)[-]", connID, afterNewConn.Sub(afterGetDest).Milliseconds(), originalDest)
 
     p.connMutex.Lock()
     p.connections[connID] = conn
@@ -117,6 +110,10 @@ func (p *Proxy) handleConnection(ctx context.Context, clientConn net.Conn) {
         p.connMutex.Unlock()
 
         conn.Close()
+        
+        // Close channel AFTER Close() and Wait() complete
+        // This ensures worker has finished draining
+        close(conn.RawChunkBuffer)
     }()
 
     conn.Start(ctx, p.verbose)
@@ -159,14 +156,6 @@ func (p *Proxy) GetActiveConnections() []*Connection {
         conns = append(conns, conn)
     }
     return conns
-}
-
-func (p *Proxy) GetCaptureServer() bool {
-	return p.captureServer
-}
-
-func (p *Proxy) GetCaptureClient() bool {
-	return p.captureClient
 }
 
 func (p *Proxy) SetCaptureServer(enabled bool) {

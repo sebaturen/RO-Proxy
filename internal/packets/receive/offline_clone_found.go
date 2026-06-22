@@ -1,7 +1,6 @@
 package receive
 
 import (
-    "log"
     "roproxy/internal/common"
 )
 
@@ -23,7 +22,7 @@ func (o *OfflineCloneFound) Deserialize() error {
 
     shopMap, hasMap := GetConnectionMap(o.ConnID)
     if !hasMap {
-        log.Printf("[%d] Offline clone found but no map info yet: %s (ID:%d)", o.ConnID, name, cloneID)
+        common.LogToUI("[yellow][%d] Offline clone found but no map info yet: %s (ID:%d)[-]", o.ConnID, name, cloneID)
         return nil
     }
 
@@ -43,8 +42,8 @@ func (o *OfflineCloneFound) Deserialize() error {
         "timestamp":o.Timestamp,
     }
 
+    common.LogToUI("[cyan][%d] Sending offline clone to API: %s on map %s (ID:%d, Job:%d, Sex:%d, X:%d, Y:%d)[-]", o.ConnID, name, shopMap, cloneID, jobID, sex, coordX, coordY)
     common.SendToAPI("vending/offline_clone", data)
-    log.Printf("[%d] Offline clone: %s on map %s (ID:%d, Job:%d, Sex:%d, X:%d, Y:%d)", o.ConnID, name, shopMap, cloneID, jobID, sex, coordX, coordY)
 
     return nil
 }

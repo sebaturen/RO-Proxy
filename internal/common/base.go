@@ -39,6 +39,7 @@ type BaseDeserializer struct {
     Timestamp int64
     Payload   []byte
     SourceIP  string
+    SourcePort int
     DestIP    string
     DestPort  int
 }

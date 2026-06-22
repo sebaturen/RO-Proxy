@@ -30,13 +30,13 @@ func main() {
 
     // Disable all standard logging immediately
     log.SetOutput(io.Discard)
-	
+    
     // Handle Ctrl+C with multiple signal types
     ctx, cancel := context.WithCancel(context.Background())
     sigChan := make(chan os.Signal, 2)
     // Listen for multiple signal types (SSH can send different signals)
     signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM, syscall.SIGINT, syscall.SIGHUP)
-	
+    
     var dashboardPtr *tui.Dashboard
     var shutdownOnce sync.Once
     go func() {
@@ -58,6 +58,11 @@ func main() {
         fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
         os.Exit(1)
     }
+
+    // Initialize global queues for UI and API consumers
+    common.InitializeGlobalUIQueue()
+    common.InitializeGlobalLogQueue()
+    proxy.InitializeGlobalQueues()
 
     if cfg.API != nil && cfg.API.URL != "" && cfg.API.Key != "" {
         common.InitAPIConsumer(cfg.API.URL, cfg.API.Key, false)
@@ -81,7 +86,12 @@ func main() {
     p := proxy.New(cfg, false, captureServer, captureClient)
     dashboard := tui.NewDashboard(p, captureServer, captureClient)
     dashboardPtr = dashboard  // Set pointer for signal handler
-    p.SetPacketLogger(dashboard)
+
+    // Start UI consumer goroutine (reads GlobalUIQueue)
+    tui.StartUIConsumer(dashboard, p)
+
+    // Start monitoring goroutine (checks every 1 minute)
+    proxy.StartMonitoring()
 
     var wg sync.WaitGroup
 

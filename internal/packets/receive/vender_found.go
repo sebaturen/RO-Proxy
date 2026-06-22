@@ -1,7 +1,6 @@
 package receive
 
 import (
-    "log"
     "roproxy/internal/common"
 )
 
@@ -16,7 +15,7 @@ func (v *VenderFound) Deserialize() error {
 
     shopMap, hasMap := GetConnectionMap(v.ConnID)
     if !hasMap {
-        log.Printf("[%d] Vendor found but no map info yet: '%s' (ID:%d)", v.ConnID, shopName, vendorID)
+        common.LogToUI("[yellow][%d] Vendor found but no map info yet: '%s' (ID:%d)[-]", v.ConnID, shopName, vendorID)
         return nil
     }
 
@@ -28,7 +27,7 @@ func (v *VenderFound) Deserialize() error {
         "timestamp": v.Timestamp,
     }
 
+    common.LogToUI("[cyan][%d] Sending vendor to API: '%s' on map '%s' (ID:%d)[-]", v.ConnID, shopName, shopMap, vendorID)
     common.SendToAPI("vending/shop", data)
-    log.Printf("[%d] Vendor: '%s' on map '%s' (ID:%d)", v.ConnID, shopName, shopMap, vendorID)
     return nil
 }
