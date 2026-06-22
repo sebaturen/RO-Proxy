@@ -6,6 +6,7 @@ import (
 
 var PacketDatabase = map[uint16]*common.PacketSpec{
     0x0ac5: {Desc: "Received Character Id And Map", Size: 156, Type: common.FIXED, Handler: &ReceivedCharIdAndMap{}, Alert: false},
+    0x0091: {Desc: "Map Change", Size: 22, Type: common.FIXED, Handler: &MapChanged{}, Alert: false},
     0x0ac7: {Desc: "Map Changed", Size: 156, Type: common.FIXED, Handler: &MapChanged{}, Alert: false},
     0x0131: {Desc: "Vender Found", Size: 86, Type: common.FIXED, Handler: &VenderFound{}, Alert: false},
     0x02eb: {Desc: "Map Loaded", Size: 13, Type: common.FIXED, Handler: &MapLoaded{}, Alert: false},
@@ -64,7 +65,6 @@ var PacketDatabase = map[uint16]*common.PacketSpec{
     0x008a: {Desc: "Actor Action", Size: 29, Type: common.FIXED, Handler: nil, Alert: false},
     0x008d: {Desc: "Public Chat", Size: -1, Type: common.INDICATED_IN_PACKET, Handler: nil, Alert: false},
     0x008e: {Desc: "Self Chat", Size: -1, Type: common.INDICATED_IN_PACKET, Handler: nil, Alert: false},
-    0x0091: {Desc: "Map Change", Size: 22, Type: common.FIXED, Handler: nil, Alert: false},
     0x0092: {Desc: "Map Changed", Size: 28, Type: common.FIXED, Handler: nil, Alert: false},
     0x0095: {Desc: "Actor Info", Size: 30, Type: common.FIXED, Handler: nil, Alert: false},
     0x0097: {Desc: "Private Message", Size: -1, Type: common.INDICATED_IN_PACKET, Handler: nil, Alert: false},
