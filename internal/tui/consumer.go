@@ -22,10 +22,13 @@ func StartUIConsumer(dashboard *Dashboard, captureSettings CaptureSettings) {
 // This allows any component to log to UI without needing a dashboard reference.
 func logConsumerLoop(dashboard *Dashboard) {
     for msg := range common.GlobalLogQueue {
-        // Filter [DEBUG] logs - only show in VERY VERBOSE mode
-        if strings.Contains(msg, "[DEBUG") {
+        // Filter verbose logs - only show in VERY VERBOSE mode
+        if strings.Contains(msg, "[DEBUG") || 
+           strings.Contains(msg, "[DRAIN") || 
+           strings.Contains(msg, "[RECORD") || 
+           strings.Contains(msg, "[MONITOR") {
             if dashboard.debugMode != DebugVeryVerbose {
-                continue // Skip debug logs unless in very verbose mode
+                continue // Skip verbose logs unless in very verbose mode
             }
         }
         dashboard.Log(msg)

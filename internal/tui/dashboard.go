@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"os"
 	"sync"
 	"time"
 
@@ -62,7 +61,6 @@ type Dashboard struct {
 	connectionFilter  uint64  // 0 = show all
 	filterActive      bool
 	recording         bool
-	recordFile        *os.File
 	recordMutex       sync.Mutex
 	
 	// Log buffer
@@ -113,14 +111,6 @@ func (d *Dashboard) Start() error {
 }
 
 func (d *Dashboard) Stop() {
-	// Close recording file if open
-	d.recordMutex.Lock()
-	if d.recordFile != nil {
-		d.recordFile.Close()
-		d.recordFile = nil
-	}
-	d.recordMutex.Unlock()
-	
 	if d.updateTicker != nil {
 		d.updateTicker.Stop()
 	}
@@ -377,8 +367,6 @@ func (d *Dashboard) LogPacket(connID uint64, direction common.PacketDirection, o
 			timestamp, connID, color, dirSymbol, opcode, descDisplay, size, checksumStr, payloadHex)
 	}
 	
-	d.writeToRecording(connID, direction, opcode, payload, checksum)
-	
 	d.logMutex.Lock()
 	d.logBuffer = append(d.logBuffer, msg)
 	if len(d.logBuffer) > d.maxLogs {
@@ -411,8 +399,6 @@ func (d *Dashboard) LogUnknown(connID uint64, direction common.PacketDirection, 
 	
 	msg := fmt.Sprintf("[white][%s][#%d] [red][⚠][-][%s][%s][-][yellow][0x%04X][-][red][UNKNOWN][-][white] size=%d%s payload=%s[-]",
 		timestamp, connID, color, dirSymbol, opcode, size, checksumStr, payloadHex)
-	
-	d.writeToRecording(connID, direction, opcode, payload, checksum)
 	
 	d.logMutex.Lock()
 	d.logBuffer = append(d.logBuffer, msg)

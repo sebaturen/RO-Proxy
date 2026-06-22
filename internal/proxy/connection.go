@@ -1,11 +1,14 @@
 package proxy
 
 import (
+    "bufio"
     "bytes"
     "context"
     "encoding/binary"
+    "fmt"
     "log"
     "net"
+    "os"
     "strconv"
     "strings"
     "sync"
@@ -34,9 +37,14 @@ type Connection struct {
 
     // Processing pipeline
     RawChunkBuffer chan *packets.RawChunk
-    cancel         context.CancelFunc // Cancels ALL goroutines when one terminates
+    cancel         context.CancelFunc
     semaphore      *semaphore.Weighted
     wg             sync.WaitGroup
+    
+    // Recording (for reverse engineering)
+    recordFile   *os.File
+    recordWriter *bufio.Writer
+    recordMutex  sync.Mutex
 }
 
 func NewConnection(id uint64, clientConn net.Conn, serverAddr string, verbose bool, proxy CaptureSettings) (*Connection, error) {
@@ -87,11 +95,8 @@ func (c *Connection) Close() {
     c.ClientConn.Close()
     c.ServerConn.Close()
     
-    // Give worker time to drain (Wait() will block until worker finishes draining)
-    // Worker will process remaining packets in RawChunkBuffer
-    
-    // DON'T close channel here - worker needs it open during drain
-    // Channel will be closed by defer after Wait() returns in proxy.go
+    // Close recording file if open
+    c.closeRecordFile()
     
     // Clear connection-specific data
     receive.ClearConnectionMap(c.ID)
@@ -194,6 +199,10 @@ func (c *Connection) workerLoop(ctx context.Context) {
 
     clientBuffer := &bytes.Buffer{}
     serverBuffer := &bytes.Buffer{}
+    
+    // Flush recorder every 1 second
+    flushTicker := time.NewTicker(1 * time.Second)
+    defer flushTicker.Stop()
 
     for {
         select {
@@ -201,7 +210,17 @@ func (c *Connection) workerLoop(ctx context.Context) {
             // Graceful drain: process remaining packets before exit
             c.drainRemainingPackets(clientBuffer, serverBuffer)
             return
+            
+        case <-flushTicker.C:
+            c.flushRecording()
+            
         case chunk := <-c.RawChunkBuffer:
+            // CRITICAL: Record RAW chunk BEFORE processing (for reverse engineering)
+            if IsRecording() {
+                c.recordRawChunk(chunk)
+            }
+            
+            // Then process normally
             c.processChunk(chunk, clientBuffer, serverBuffer)
         }
     }
@@ -274,6 +293,78 @@ func (c *Connection) waitForDeserializers() {
         }
         
         time.Sleep(50 * time.Millisecond)
+    }
+}
+
+// recordRawChunk writes raw chunk to recording file (for reverse engineering).
+// Format: timestamp|conn_id|direction|length|hex_bytes
+func (c *Connection) recordRawChunk(chunk *packets.RawChunk) {
+    c.recordMutex.Lock()
+    defer c.recordMutex.Unlock()
+    
+    // Lazy init: create file on first chunk if recording is active
+    if c.recordFile == nil {
+        if err := c.createRecordFile(); err != nil {
+            common.LogToUI("[red][RECORD] Connection #%d failed to create recording file: %v[-]", c.ID, err)
+            return
+        }
+    }
+    
+    dirStr := "CS"
+    if chunk.Direction == common.ServerToClient {
+        dirStr = "SC"
+    }
+    
+    hexData := fmt.Sprintf("%X", chunk.Data)
+    line := fmt.Sprintf("%d|%d|%s|%d|%s\n", 
+        chunk.Timestamp.Unix(), c.ID, dirStr, len(chunk.Data), hexData)
+    
+    c.recordWriter.WriteString(line)
+}
+
+func (c *Connection) createRecordFile() error {
+    // Ensure recordings directory exists
+    if err := os.MkdirAll("recordings", 0755); err != nil {
+        return fmt.Errorf("failed to create recordings directory: %w", err)
+    }
+    
+    timestamp := time.Now().Format("20060102_150405")
+    filename := fmt.Sprintf("recordings/%d_%s.txt", c.ID, timestamp)
+    
+    file, err := os.Create(filename)
+    if err != nil {
+        return fmt.Errorf("failed to create file: %w", err)
+    }
+    
+    c.recordFile = file
+    c.recordWriter = bufio.NewWriter(file)
+    
+    common.LogToUI("[green][RECORD] Connection #%d started recording: %s[-]", c.ID, filename)
+    return nil
+}
+
+func (c *Connection) flushRecording() {
+    c.recordMutex.Lock()
+    defer c.recordMutex.Unlock()
+    
+    if c.recordWriter != nil {
+        c.recordWriter.Flush()
+    }
+}
+
+func (c *Connection) closeRecordFile() {
+    c.recordMutex.Lock()
+    defer c.recordMutex.Unlock()
+    
+    if c.recordWriter != nil {
+        c.recordWriter.Flush()
+        c.recordWriter = nil
+    }
+    
+    if c.recordFile != nil {
+        c.recordFile.Close()
+        common.LogToUI("[yellow][RECORD] Connection #%d recording closed[-]", c.ID)
+        c.recordFile = nil
     }
 }
 
