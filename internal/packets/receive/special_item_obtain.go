@@ -42,6 +42,8 @@ func (sio *SpecialItemObtain) Deserialize() error {
 		"from_item_id": sio.itemId,
 		"from_monster_code": sio.monsterCode,
 		"character_name": sio.characterName,
+		"PID": sio.ConnectionID,
+		"timestamp": sio.Timestamp,
 	}
 
 	common.Log(common.LogPacket, common.LogVeryVerbose, "Special Item received [%d] %s -> %s", sio.itemId, sio.characterName, sio.receivedItemId)

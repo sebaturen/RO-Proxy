@@ -20,6 +20,8 @@ func (ui *UpgradeItemBroadcast) Deserialize() error {
 		"item_id": itemId,
 		"level": level,
 		"unknown_val": unknownVal,
+		"PID": ui.ConnectionID,
+		"timestamp": ui.Timestamp,
 	}
 
 	common.Log(common.LogPacket, common.LogVeryVerbose, "Upgrade Item [%s] %d -> %d", characterName, itemId, level)
