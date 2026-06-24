@@ -1,9 +1,8 @@
 package packets
 
 import (
-    "time"
-    
-    "roproxy/internal/common"
+	"roproxy/internal/common"
+	"time"
 )
 
 // RawChunk represents a raw TCP stream chunk (unparsed).

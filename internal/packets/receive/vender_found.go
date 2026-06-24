@@ -1,21 +1,22 @@
 package receive
 
 import (
-    "roproxy/internal/common"
+	"roproxy/internal/common"
+	"roproxy/internal/packets"
 )
 
 type VenderFound struct {
-    common.BaseDeserializer
+	packets.ParsedPacket
 }
 
 func (v *VenderFound) Deserialize() error {
 
-    vendorID := common.ReadUint32LE(v.Payload, 2)
-    shopName := common.ReadNullTerminatedString(v.Payload, 6)
+    vendorID := common.ReadUint32LE(v.Payload, 0)
+    shopName := common.ReadNullTerminatedString(v.Payload, 4)
 
-    shopMap, hasMap := GetConnectionMap(v.ConnID)
+    shopMap, hasMap := GetConnectionMap(v.ConnectionID)
     if !hasMap {
-        common.Log(common.LogPacket, common.LogWarning, "[%d] Vendor found but no map info yet: '%s' (ID:%d)", v.ConnID, shopName, vendorID)
+        common.Log(common.LogPacket, common.LogWarning, "[%d] Vendor found but no map info yet: '%s' (ID:%d)", v.ConnectionID, shopName, vendorID)
         return nil
     }
 
@@ -23,11 +24,11 @@ func (v *VenderFound) Deserialize() error {
         "vendor_id": vendorID,
         "shop_name": common.StringToHex(shopName),
         "shop_map":  common.StringToHex(shopMap),
-        "PID":       v.ConnID,
+        "PID":       v.ConnectionID,
         "timestamp": v.Timestamp,
     }
 
-    common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Sending vendor to API: '%s' on map '%s' (ID:%d)", v.ConnID, shopName, shopMap, vendorID)
+    common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Sending vendor to API: '%s' on map '%s' (ID:%d)", v.ConnectionID, shopName, shopMap, vendorID)
     common.SendToAPI("vending/shop", data)
     return nil
 }

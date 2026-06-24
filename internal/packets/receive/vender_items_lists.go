@@ -1,12 +1,18 @@
 package receive
 
 import (
-    "encoding/hex"
-    "roproxy/internal/common"
+	"encoding/hex"
+	"roproxy/internal/common"
+	"roproxy/internal/packets"
+)
+
+const (
+	VendorPacketItemList4 = 0x0b62
+	VendorPacketItemList3 = 0x0b3d
 )
 
 type VenderItemsLists struct {
-    common.BaseDeserializer
+	packets.ParsedPacket
 }
 
 type VenderItem struct {
@@ -33,19 +39,19 @@ type VenderItem struct {
 }
 
 func (v *VenderItemsLists) Deserialize() error {
-    opcode := uint16(v.Payload[0]) | (uint16(v.Payload[1]) << 8)
+    opcode := v.Opcode
     
     var vendorID, vendorCID uint32
     var flag, expiredDate uint32
     var itemListStart int
 
-    if opcode == 0x0b62 {
+    if opcode == VendorPacketItemList4 {
         vendorID = common.ReadUint32LE(v.Payload, 4)
         vendorCID = common.ReadUint32LE(v.Payload, 8)
         flag = uint32(v.Payload[12])
         expiredDate = common.ReadUint32LE(v.Payload, 13)
         itemListStart = 17
-    } else if opcode == 0x0b3d {
+    } else if opcode == VendorPacketItemList3 {
         vendorID = common.ReadUint32LE(v.Payload, 4)
         vendorCID = common.ReadUint32LE(v.Payload, 8)
         itemListStart = 12
@@ -98,9 +104,9 @@ func (v *VenderItemsLists) Deserialize() error {
         items = append(items, item)
     }
 
-    shopMap, hasMap := GetConnectionMap(v.ConnID)
+    shopMap, hasMap := GetConnectionMap(v.ConnectionID)
     if !hasMap {
-        common.Log(common.LogPacket, common.LogWarning, "[%d] Vender items list received but no map info yet (vendor:%d, items:%d)", v.ConnID, vendorID, len(items))
+        common.Log(common.LogPacket, common.LogWarning, "[%d] Vender items list received but no map info yet (vendor:%d, items:%d)", v.ConnectionID, vendorID, len(items))
         return nil
     }
 
@@ -137,11 +143,11 @@ func (v *VenderItemsLists) Deserialize() error {
         "flag":         flag,
         "expired_date": expiredDate,
         "shop_items":   shopItems,
-        "PID":          v.ConnID,
+        "PID":          v.ConnectionID,
         "timestamp":    v.Timestamp,
     }
 
-    common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Sending vender items to API: vendor %d on map %s (%d items)", v.ConnID, vendorID, shopMap, len(items))
+    common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Sending vender items to API: vendor %d on map %s (%d items)", v.ConnectionID, vendorID, shopMap, len(items))
     common.SendToAPI("vending/items", data)
 
     return nil

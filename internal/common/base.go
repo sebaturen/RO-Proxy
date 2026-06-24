@@ -34,16 +34,6 @@ type PacketDeserializer interface {
     Deserialize() error
 }
 
-type BaseDeserializer struct {
-    ConnID    uint64
-    Timestamp int64
-    Payload   []byte
-    SourceIP  string
-    SourcePort int
-    DestIP    string
-    DestPort  int
-}
-
 func ReadUint32LE(data []byte, offset int) uint32 {
     if offset+4 > len(data) {
         return 0

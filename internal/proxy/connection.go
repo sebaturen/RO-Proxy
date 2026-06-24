@@ -386,17 +386,14 @@ func (c *Connection) spawnDeserializer(pkt *packets.ParsedPacket) {
                 handlerValue = handlerValue.Elem()
             }
 
-            baseField := handlerValue.FieldByName("BaseDeserializer")
-            if baseField.IsValid() && baseField.CanSet() {
-                baseField.Set(reflect.ValueOf(common.BaseDeserializer{
-                    ConnID:     pkt.ConnectionID,
-                    Timestamp:  pkt.Timestamp.Unix(),
-                    Payload:    pkt.Payload,
-                    SourceIP:   pkt.SourceIP,
-                    SourcePort: pkt.SourcePort,
-                    DestIP:     pkt.DestIP,
-                    DestPort:   pkt.DestPort,
-                }))
+            packetField := handlerValue.FieldByName("ParsedPacket")
+            if packetField.IsValid() && packetField.CanSet() {
+                pktValue := reflect.ValueOf(pkt)
+                if pktValue.Kind() == reflect.Ptr {
+                    pktValue = pktValue.Elem()
+                }
+                
+                packetField.Set(pktValue)
             }
 
             spec.Handler.Deserialize()
@@ -488,12 +485,17 @@ func (c *Connection) tryParsePackets(buffer *bytes.Buffer, direction common.Pack
         // Parse network addresses for MapLocation system
         sourceIP, sourcePort, destIP, destPort := c.parseNetworkAddresses(direction)
 
+        var startData = 2
+        if spec.Size == -1 {
+            startData = 4
+        }
+
         result = append(result, &packets.ParsedPacket{
             ConnectionID: c.ID,
             Timestamp:    timestamp,
             Direction:    direction,
             Opcode:       opcode,
-            Payload:      packetData,
+            Payload:      packetData[startData:],
             Checksum:     checksum,
             SourceIP:     sourceIP,
             SourcePort:   sourcePort,
