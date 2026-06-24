@@ -903,7 +903,7 @@ var PacketDatabase = map[uint16]*common.PacketSpec{
     0x00c5: {Desc: "Unknown", Size: 7, Type: common.FIXED, Handler: nil, Alert: false},
     0x00c8: {Desc: "Unknown", Size: -1, Type: common.INDICATED_IN_PACKET, Handler: nil, Alert: false},
     0x00c9: {Desc: "Unknown", Size: -1, Type: common.INDICATED_IN_PACKET, Handler: nil, Alert: false},
-    0x0096: {Desc: "Unknown", Size: -1, Type: common.INDICATED_IN_PACKET, Handler: nil, Alert: false},
+    0x0096: {Desc: "New Character", Size: 93, Type: common.FIXED, Handler: nil, Alert: false},
     0x00cf: {Desc: "Unknown", Size: 27, Type: common.FIXED, Handler: nil, Alert: false},
     0x00d0: {Desc: "Unknown", Size: 3, Type: common.FIXED, Handler: nil, Alert: false},
     0x00d3: {Desc: "Unknown", Size: 2, Type: common.FIXED, Handler: nil, Alert: false},

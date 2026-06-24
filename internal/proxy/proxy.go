@@ -22,35 +22,27 @@ type Proxy struct {
     connections   map[uint64]*Connection
     connMutex     sync.RWMutex
     nextConnID    atomic.Uint64
-    verbose       bool
-    captureServer bool
-    captureClient bool
 }
 
-func New(cfg *config.Config, verbose, captureServer, captureClient bool) *Proxy {
+func New(cfg *config.Config) *Proxy {
     return &Proxy{
         cfg:           cfg,
         connections:   make(map[uint64]*Connection),
-        verbose:       verbose,
-        captureServer: captureServer,
-        captureClient: captureClient,
     }
 }
 
-// GetCaptureServer implements CaptureSettings interface
-func (p *Proxy) GetCaptureServer() bool {
-    return p.captureServer
+func Start(p *Proxy, ctx context.Context) {
+    SetProxy(p)
+    go func ()  {
+        p.startListen(ctx)
+    }()
 }
 
-// GetCaptureClient implements CaptureSettings interface
-func (p *Proxy) GetCaptureClient() bool {
-    return p.captureClient
-}
-
-func (p *Proxy) Start(ctx context.Context) error {
+func (p *Proxy) startListen(ctx context.Context) error {
     addr := fmt.Sprintf(":%d", p.cfg.ListenPort)
     listener, err := net.Listen("tcp", addr)
     if err != nil {
+        common.Log(common.LogProxy, common.LogError, "failed to listen on %s: %w", addr, err)
         return fmt.Errorf("failed to listen on %s: %w", addr, err)
     }
     p.listener = listener
@@ -80,25 +72,25 @@ func (p *Proxy) handleConnection(ctx context.Context, clientConn net.Conn) {
     startTime := time.Now()
     connID := p.nextConnID.Add(1)
     
-    common.LogToUI("[gray][DEBUG] Connection #%d: Client connected from %s (handleConnection started)[-]", connID, clientConn.RemoteAddr().String())
+    common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d: Client connected from %s (handleConnection started)", connID, clientConn.RemoteAddr().String())
 
     originalDest, err := getOriginalDest(clientConn)
     if err != nil {
-        common.LogToUI("[red][DEBUG] Connection #%d: getOriginalDest FAILED: %v[-]", connID, err)
+        common.Log(common.LogProxy, common.LogError, "Connection #%d: getOriginalDest FAILED: %v", connID, err)
         clientConn.Close()
         return
     }
     afterGetDest := time.Now()
-    common.LogToUI("[gray][DEBUG] Connection #%d: getOriginalDest=%dms, dest=%s[-]", connID, afterGetDest.Sub(startTime).Milliseconds(), originalDest)
+    common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d: getOriginalDest=%dms, dest=%s", connID, afterGetDest.Sub(startTime).Milliseconds(), originalDest)
 
-    conn, err := NewConnection(connID, clientConn, originalDest, p.verbose, p)
+    conn, err := NewConnection(connID, clientConn, originalDest)
     if err != nil {
-        common.LogToUI("[red][DEBUG] Connection #%d: NewConnection FAILED: %v[-]", connID, err)
+        common.Log(common.LogProxy, common.LogError, "Connection #%d: NewConnection FAILED: %v", connID, err)
         clientConn.Close()
         return
     }
     afterNewConn := time.Now()
-    common.LogToUI("[gray][DEBUG] Connection #%d: NewConnection=%dms (dial to %s)[-]", connID, afterNewConn.Sub(afterGetDest).Milliseconds(), originalDest)
+    common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d: NewConnection=%dms (dial to %s)", connID, afterNewConn.Sub(afterGetDest).Milliseconds(), originalDest)
 
     p.connMutex.Lock()
     p.connections[connID] = conn
@@ -116,7 +108,7 @@ func (p *Proxy) handleConnection(ctx context.Context, clientConn net.Conn) {
         close(conn.RawChunkBuffer)
     }()
 
-    conn.Start(ctx, p.verbose)
+    conn.Start(ctx)
     conn.Wait()
 }
 
@@ -156,12 +148,4 @@ func (p *Proxy) GetActiveConnections() []*Connection {
         conns = append(conns, conn)
     }
     return conns
-}
-
-func (p *Proxy) SetCaptureServer(enabled bool) {
-    p.captureServer = enabled
-}
-
-func (p *Proxy) SetCaptureClient(enabled bool) {
-    p.captureClient = enabled
 }

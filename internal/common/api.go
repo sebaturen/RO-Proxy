@@ -8,6 +8,8 @@ import (
     "net/http"
     "sync"
     "time"
+
+    "roproxy/internal/config"
 )
 
 type APIRequest struct {
@@ -62,7 +64,6 @@ type APIConsumer struct {
     baseURL    string
     apiKey     string
     httpClient *http.Client
-    verbose    bool
 }
 
 var globalAPIConsumer *APIConsumer
@@ -78,13 +79,21 @@ func (ac *APIConsumer) QueueSize() int {
     return ac.queue.Size()
 }
 
-func InitAPIConsumer(baseURL, apiKey string, verbose bool) {
+func InitAPIConsumer(cfg *config.Config) {
+
+    if cfg.API == nil || cfg.API.URL == "" || cfg.API.Key == "" {
+        Log(LogAPI, LogInfo, "API configuration failed")
+    }
+
+    baseURL := cfg.API.URL
+    apiKey := cfg.API.Key
+    
     if baseURL == "" || apiKey == "" {
-        LogToUI("[yellow][API] InitAPIConsumer skipped - no config[-]")
+        Log(LogAPI, LogInfo, "InitAPIConsumer skipped - no config")
         return
     }
 
-    LogToUI("[green][API] InitAPIConsumer starting - URL=%s[-]", baseURL)
+    Log(LogAPI, LogInfo, "InitAPIConsumer starting - URL=%s", baseURL)
 
     globalAPIConsumer = &APIConsumer{
         queue:   NewUnboundedAPIQueue(),
@@ -96,20 +105,19 @@ func InitAPIConsumer(baseURL, apiKey string, verbose bool) {
                 TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
             },
         },
-        verbose: verbose,
     }
 
     go globalAPIConsumer.consumeLoop()
-    LogToUI("[green][API] Consumer goroutine started[-]")
+    Log(LogAPI, LogInfo, "Consumer goroutine started")
 }
 
 func SendToAPI(endpoint string, payload map[string]interface{}) {
     if globalAPIConsumer == nil {
-        LogToUI("[red][API] SendToAPI called but globalAPIConsumer is nil (endpoint=%s)[-]", endpoint)
+        Log(LogAPI, LogError, "SendToAPI called but globalAPIConsumer is nil (endpoint=%s)", endpoint)
         return
     }
 
-    LogToUI("[cyan][API] SendToAPI: %s (queue size before: %d)[-]", endpoint, globalAPIConsumer.queue.Size())
+    Log(LogAPI, LogVerbose, "SendToAPI: %s (queue size before: %d)", endpoint, globalAPIConsumer.queue.Size())
 
     globalAPIConsumer.queue.Push(APIRequest{
         Endpoint:  endpoint,
@@ -119,15 +127,15 @@ func SendToAPI(endpoint string, payload map[string]interface{}) {
     // Log warning if queue is getting large
     size := globalAPIConsumer.queue.Size()
     if size > 0 && size%100000 == 0 {
-        LogToUI("[red]WARNING: API queue size reached %d items (API may be down)[-]", size)
+        Log(LogAPI, LogWarning, "API queue size reached %d items (API may be down)", size)
     }
 }
 
 func (ac *APIConsumer) consumeLoop() {
-    LogToUI("[green][API] consumeLoop started, waiting for requests...[-]")
+    Log(LogAPI, LogVerbose, "consumeLoop started, waiting for requests...")
     for {
         req := ac.queue.Pop()
-        LogToUI("[cyan][API] Processing request: %s (queue size: %d)[-]", req.Endpoint, ac.queue.Size())
+        Log(LogAPI, LogVerbose, "Processing request: %s (queue size: %d)", req.Endpoint, ac.queue.Size())
         ac.sendRequest(req)
     }
 }
@@ -137,14 +145,14 @@ func (ac *APIConsumer) sendRequest(req APIRequest) {
 
     jsonData, err := json.Marshal(req.Payload)
     if err != nil {
-        LogToUI("[red][API] Failed to marshal request: %v[-]", err)
+        Log(LogAPI, LogError, "Failed to marshal request: %v", err)
         return
     }
 
     for {
         httpReq, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
         if err != nil {
-            LogToUI("[red][API] Failed to create request: %v[-]", err)
+            Log(LogAPI, LogError, "Failed to create request: %v", err)
             time.Sleep(1 * time.Second)
             continue
         }
@@ -154,9 +162,7 @@ func (ac *APIConsumer) sendRequest(req APIRequest) {
 
         resp, err := ac.httpClient.Do(httpReq)
         if err != nil {
-            if ac.verbose {
-                LogToUI("[yellow][API] Request failed (will retry): %v[-]", err)
-            }
+            Log(LogAPI, LogVerbose, "Request failed (will retry): %v", err)
             time.Sleep(1 * time.Second)
             continue
         }
@@ -164,15 +170,11 @@ func (ac *APIConsumer) sendRequest(req APIRequest) {
         resp.Body.Close()
 
         if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-            if ac.verbose {
-                LogToUI("[green][API] Request sent: %s[-]", req.Endpoint)
-            }
+            Log(LogAPI, LogVerbose, "Request sent: %s", req.Endpoint)
             return
         }
 
-        if ac.verbose {
-            LogToUI("[yellow][API] Request failed with status %d (will retry)[-]", resp.StatusCode)
-        }
+        Log(LogAPI, LogVerbose, "Request failed with status %d (will retry)", resp.StatusCode)
         time.Sleep(1 * time.Second)
     }
 }

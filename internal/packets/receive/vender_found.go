@@ -15,7 +15,7 @@ func (v *VenderFound) Deserialize() error {
 
     shopMap, hasMap := GetConnectionMap(v.ConnID)
     if !hasMap {
-        common.LogToUI("[yellow][%d] Vendor found but no map info yet: '%s' (ID:%d)[-]", v.ConnID, shopName, vendorID)
+        common.Log(common.LogPacket, common.LogWarning, "[%d] Vendor found but no map info yet: '%s' (ID:%d)", v.ConnID, shopName, vendorID)
         return nil
     }
 
@@ -27,7 +27,7 @@ func (v *VenderFound) Deserialize() error {
         "timestamp": v.Timestamp,
     }
 
-    common.LogToUI("[cyan][%d] Sending vendor to API: '%s' on map '%s' (ID:%d)[-]", v.ConnID, shopName, shopMap, vendorID)
+    common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Sending vendor to API: '%s' on map '%s' (ID:%d)", v.ConnID, shopName, shopMap, vendorID)
     common.SendToAPI("vending/shop", data)
     return nil
 }

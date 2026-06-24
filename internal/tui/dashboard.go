@@ -13,24 +13,21 @@ import (
 // Build version - set at compile time via ldflags
 var BuildVersion = "dev"
 
-type DebugMode int
+type VerbosityLevel int
 
 const (
-	DebugOff DebugMode = iota
-	DebugOn
-	DebugVerbose
-	DebugVeryVerbose
+	VerbosityInfo VerbosityLevel = iota
+	VerbosityVerbose
+	VerbosityVeryVerbose
 )
 
-func (d DebugMode) String() string {
-	switch d {
-	case DebugOff:
-		return "OFF"
-	case DebugOn:
-		return "ON"
-	case DebugVerbose:
+func (v VerbosityLevel) String() string {
+	switch v {
+	case VerbosityInfo:
+		return "INFO"
+	case VerbosityVerbose:
 		return "VERBOSE"
-	case DebugVeryVerbose:
+	case VerbosityVeryVerbose:
 		return "VERY VERBOSE"
 	default:
 		return "UNKNOWN"
@@ -39,7 +36,6 @@ func (d DebugMode) String() string {
 
 type Dashboard struct {
 	app               *tview.Application
-	proxy             *proxy.Proxy
 	stats             *Stats
 	
 	// UI components
@@ -53,10 +49,7 @@ type Dashboard struct {
 	rootFlex          *tview.Flex
 	
 	// Settings
-	debugMode         DebugMode
-	showWarnings      bool
-	captureServer     bool
-	captureClient     bool
+	verbosityLevel    VerbosityLevel  // Controls log filtering (Info/Verbose/VeryVerbose)
 	fullTimestamp     bool
 	connectionFilter  uint64  // 0 = show all
 	filterActive      bool
@@ -77,17 +70,13 @@ type Dashboard struct {
 	stopChan          chan struct{}
 }
 
-func NewDashboard(p *proxy.Proxy, captureServer, captureClient bool) *Dashboard {
+func NewDashboard() *Dashboard {
 	app := tview.NewApplication()
 	
 	d := &Dashboard{
 		app:              app,
-		proxy:            p,
 		stats:            NewStats(),
-		debugMode:        DebugOff,
-		showWarnings:     true,
-		captureServer:    captureServer,
-		captureClient:    captureClient,
+		verbosityLevel:   VerbosityInfo,
 		fullTimestamp:    false,
 		connectionFilter: 0,
 		filterActive:     false,
@@ -167,7 +156,8 @@ func (d *Dashboard) updateStats() {
 }
 
 func (d *Dashboard) updateConnections() {
-	conns := d.proxy.GetActiveConnections()
+	p := proxy.GetProxy()
+	conns := p.GetActiveConnections()
 	
 	d.connectionsView.Clear()
 	
@@ -187,11 +177,7 @@ func (d *Dashboard) updateConnections() {
 }
 
 func (d *Dashboard) updateControlsView() {
-	debugStatus := fmt.Sprintf("[yellow]%s[-]", d.debugMode.String())
-	warningsStatus := colorBool(d.showWarnings, "ON", "OFF")
-	serverStatus := colorBool(d.captureServer, "ON", "OFF")
-	clientStatus := colorBool(d.captureClient, "ON", "OFF")
-	timestampStatus := colorBool(d.fullTimestamp, "FULL", "TIME")
+	verbosityStatus := fmt.Sprintf("[yellow]%s[-]", d.verbosityLevel.String())
 	
 	d.recordMutex.Lock()
 	recordingStatus := colorBool(d.recording, "ON", "OFF")
@@ -202,22 +188,14 @@ func (d *Dashboard) updateControlsView() {
 		filterText = fmt.Sprintf("[yellow]#%d[-]", d.connectionFilter)
 	}
 	
-	content := fmt.Sprintf(`[yellow]D[-] Debug:    %s
-[yellow]W[-] Warnings: %s
-[yellow]S[-] S→C:      %s
-[yellow]C[-] C→S:      %s
-[yellow]T[-] Time:     %s
-[yellow]F[-] Filter:   %s
-[yellow]R[-] Record:   %s
+	content := fmt.Sprintf(`[yellow]V[-] Verbosity: %s
+[yellow]F[-] Filter:    %s
+[yellow]R[-] Record:    %s
 
 [yellow]L[-] Clear Logs
 [yellow]Q[-] Quit
 [gray]Ctrl+C/Ctrl+D/Q: force quit[-]`,
-		debugStatus,
-		warningsStatus,
-		serverStatus,
-		clientStatus,
-		timestampStatus,
+		verbosityStatus,
 		filterText,
 		recordingStatus,
 	)
@@ -233,51 +211,17 @@ func (d *Dashboard) updateControlsView() {
 
 func (d *Dashboard) updateStatusBar() {
 	status := fmt.Sprintf("[white]ROProxy Running - v%s", BuildVersion)
-	if !d.captureServer && !d.captureClient {
-		status = "[red]● WARNING: All capture disabled[-]"
-	}
-	
 	d.statusBar.SetText(status)
 }
 
-func (d *Dashboard) toggleDebugMode() {
-	// Cycle through: OFF -> ON -> VERBOSE -> VERY VERBOSE -> OFF
-	d.debugMode = (d.debugMode + 1) % 4
+func (d *Dashboard) toggleVerbosity() {
+	// Cycle through: Info -> Verbose -> VeryVerbose -> Info
+	d.verbosityLevel = (d.verbosityLevel + 1) % 3
 	d.app.QueueUpdateDraw(func() {
 		d.updateControlsView()
 		d.updateStatusBar()
 	})
-	d.Log("[yellow]Debug mode: %s[-]", d.debugMode.String())
-}
-
-func (d *Dashboard) toggleWarnings() {
-	d.showWarnings = !d.showWarnings
-	d.app.QueueUpdateDraw(func() {
-		d.updateControlsView()
-	})
-	d.Log("[yellow]Warnings: %s[-]", colorBool(d.showWarnings, "ON", "OFF"))
-}
-
-func (d *Dashboard) toggleCaptureServer() {
-	d.captureServer = !d.captureServer
-	d.proxy.SetCaptureServer(d.captureServer)
-	d.app.QueueUpdateDraw(func() {
-		d.updateControlsView()
-		d.updateStatusBar()
-	})
-	d.Log("[cyan]Server→Client capture: %s[-]", colorBool(d.captureServer, "ON", "OFF"))
-}
-
-func (d *Dashboard) toggleTimestamp() {
-	d.fullTimestamp = !d.fullTimestamp
-	d.app.QueueUpdateDraw(func() {
-		d.updateControlsView()
-	})
-	if d.fullTimestamp {
-		d.Log("[yellow]Timestamp: FULL (date + time)[-]")
-	} else {
-		d.Log("[yellow]Timestamp: TIME ONLY[-]")
-	}
+	common.Log(common.LogUI, common.LogInfo, "[yellow]Verbosity level: %s[-]", d.verbosityLevel.String())
 }
 
 func (d *Dashboard) promptConnectionFilter() {
@@ -297,16 +241,6 @@ func (d *Dashboard) promptConnectionFilter() {
 	})
 }
 
-func (d *Dashboard) toggleCaptureClient() {
-	d.captureClient = !d.captureClient
-	d.proxy.SetCaptureClient(d.captureClient)
-	d.app.QueueUpdateDraw(func() {
-		d.updateControlsView()
-		d.updateStatusBar()
-	})
-	d.Log("[green]Client→Server capture: %s[-]", colorBool(d.captureClient, "ON", "OFF"))
-}
-
 func (d *Dashboard) clearLogs() {
 	d.logMutex.Lock()
 	d.logBuffer = make([]string, 0)
@@ -316,102 +250,26 @@ func (d *Dashboard) clearLogs() {
 		d.logsView.Clear()
 	})
 	
-	d.Log("[gray]Logs cleared[-]")
+	common.Log(common.LogUI, common.LogInfo, "[gray]Logs cleared[-]")
 }
 
-func (d *Dashboard) Log(format string, args ...interface{}) {
-	timestamp := time.Now().Format("2006-01-02 15:04:05.000")
-	msg := fmt.Sprintf("[white]%s %s[-]", timestamp, fmt.Sprintf(format, args...))
-	
+// LogBatch writes multiple log messages in a single UI update for better performance.
+// Used by the log consumer to batch multiple messages together.
+func (d *Dashboard) LogBatch(messages []string) {
 	d.logMutex.Lock()
-	d.logBuffer = append(d.logBuffer, msg)
+	d.logBuffer = append(d.logBuffer, messages...)
 	if len(d.logBuffer) > d.maxLogs {
-		d.logBuffer = d.logBuffer[1:]
+		overflow := len(d.logBuffer) - d.maxLogs
+		d.logBuffer = d.logBuffer[overflow:]
 	}
 	d.logMutex.Unlock()
 	
-	// Queue update instead of direct write
+	// Single update for ALL messages
 	d.app.QueueUpdateDraw(func() {
-		fmt.Fprintf(d.logsView, "%s\n", msg)
+		for _, msg := range messages {
+			fmt.Fprintf(d.logsView, "%s\n", msg)
+		}
 	})
-}
-
-func (d *Dashboard) LogPacket(connID uint64, direction common.PacketDirection, opcode uint16, size int, desc string, payload []byte, checksum *uint8) {
-	if d.debugMode == DebugOff {
-		d.stats.AddPacket(direction, size, false)
-		return
-	}
-	
-	if d.connectionFilter > 0 && d.connectionFilter != connID {
-		d.stats.AddPacket(direction, size, false)
-		return
-	}
-	
-	timestamp := formatTimestamp(d.fullTimestamp)
-	dirSymbol, color := formatDirection(direction)
-	checksumStr := formatChecksum(checksum)
-	descDisplay := formatDesc(desc)
-	
-	var msg string
-	switch d.debugMode {
-	case DebugOn:
-		msg = fmt.Sprintf("[gray]%s[-][yellow][#%d][-][%s][%s][-][yellow][0x%04X][-][white]%s size=%d%s[-]",
-			timestamp, connID, color, dirSymbol, opcode, descDisplay, size, checksumStr)
-	case DebugVerbose:
-		payloadHex := formatPayload(payload, true)
-		msg = fmt.Sprintf("[gray]%s[-][yellow][#%d][-][%s][%s][-][yellow][0x%04X][-][white]%s size=%d%s payload=%s[-]",
-			timestamp, connID, color, dirSymbol, opcode, descDisplay, size, checksumStr, payloadHex)
-	case DebugVeryVerbose:
-		payloadHex := formatPayload(payload, false)
-		msg = fmt.Sprintf("[gray]%s[-][yellow][#%d][-][%s][%s][-][yellow][0x%04X][-][white]%s size=%d%s payload=%s[-]",
-			timestamp, connID, color, dirSymbol, opcode, descDisplay, size, checksumStr, payloadHex)
-	}
-	
-	d.logMutex.Lock()
-	d.logBuffer = append(d.logBuffer, msg)
-	if len(d.logBuffer) > d.maxLogs {
-		d.logBuffer = d.logBuffer[1:]
-	}
-	d.logMutex.Unlock()
-	
-	d.app.QueueUpdateDraw(func() {
-		fmt.Fprintf(d.logsView, "%s\n", msg)
-	})
-	
-	d.stats.AddPacket(direction, size, false)
-}
-
-func (d *Dashboard) LogUnknown(connID uint64, direction common.PacketDirection, opcode uint16, size int, payload []byte, checksum *uint8) {
-	if !d.showWarnings {
-		d.stats.AddPacket(direction, size, true)
-		return
-	}
-	
-	if d.connectionFilter > 0 && d.connectionFilter != connID {
-		d.stats.AddPacket(direction, size, true)
-		return
-	}
-
-	timestamp := formatTimestamp(d.fullTimestamp)
-	dirSymbol, color := formatDirection(direction)
-	checksumStr := formatChecksum(checksum)
-	payloadHex := formatPayload(payload, true)
-	
-	msg := fmt.Sprintf("[white][%s][#%d] [red][⚠][-][%s][%s][-][yellow][0x%04X][-][red][UNKNOWN][-][white] size=%d%s payload=%s[-]",
-		timestamp, connID, color, dirSymbol, opcode, size, checksumStr, payloadHex)
-	
-	d.logMutex.Lock()
-	d.logBuffer = append(d.logBuffer, msg)
-	if len(d.logBuffer) > d.maxLogs {
-		d.logBuffer = d.logBuffer[1:]
-	}
-	d.logMutex.Unlock()
-	
-	d.app.QueueUpdateDraw(func() {
-		fmt.Fprintf(d.logsView, "%s\n", msg)
-	})
-	
-	d.stats.AddPacket(direction, size, true)
 }
 
 func colorBool(val bool, trueText, falseText string) string {
@@ -436,12 +294,4 @@ func formatBytes(bytes uint64) string {
 
 func (d *Dashboard) GetStats() *Stats {
 	return d.stats
-}
-
-func (d *Dashboard) IsDebugMode() bool {
-	return d.debugMode != DebugOff
-}
-
-func (d *Dashboard) IsShowWarnings() bool {
-	return d.showWarnings
 }

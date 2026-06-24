@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"os"
+	"roproxy/internal/common"
 	"strconv"
 	"time"
 
@@ -88,8 +89,7 @@ func (d *Dashboard) buildFilterInput() {
 						d.controlsView.SetBorder(true)
 						d.app.SetFocus(d.logsView)
 					})
-					d.Log("[yellow]Connection filter: %s[-]", colorBool(d.connectionFilter > 0, 
-						fmt.Sprintf("#%d", d.connectionFilter), "ALL"))
+					common.Log(common.LogUI, common.LogInfo, "[yellow]Connection filter: %s[-]", colorBool(d.connectionFilter > 0, fmt.Sprintf("#%d", d.connectionFilter), "ALL"))
 				case tcell.KeyEscape:
 					d.filterActive = false
 					d.app.QueueUpdateDraw(func() {
@@ -138,16 +138,8 @@ func (d *Dashboard) setupKeyBindings() {
 		}
 		
 		switch event.Rune() {
-		case 'd', 'D':
-			go d.toggleDebugMode()
-		case 'w', 'W':
-			go d.toggleWarnings()
-		case 's', 'S':
-			go d.toggleCaptureServer()
-		case 'c', 'C':
-			go d.toggleCaptureClient()
-		case 't', 'T':
-			go d.toggleTimestamp()
+		case 'v', 'V':
+			go d.toggleVerbosity()
 		case 'f', 'F':
 			go d.promptConnectionFilter()
 		case 'l', 'L':

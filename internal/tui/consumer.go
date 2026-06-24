@@ -1,112 +1,73 @@
 package tui
 
 import (
-    "reflect"
-    "strings"
-
     "roproxy/internal/common"
-    "roproxy/internal/packets"
-    "roproxy/internal/packets/receive"
-    "roproxy/internal/packets/send"
 )
 
 // StartUIConsumer starts the global UI consumer goroutine.
-// This goroutine reads from GlobalUIQueue and processes packets for display.
-// It replaces the legacy PacketProcessor per-connection approach.
-func StartUIConsumer(dashboard *Dashboard, captureSettings CaptureSettings) {
-    go uiConsumerLoop(dashboard, captureSettings)
+// This goroutine reads from GlobalLogQueue and displays logs.
+func StartUIConsumer(dashboard *Dashboard) {
     go logConsumerLoop(dashboard)
 }
 
 // logConsumerLoop reads from GlobalLogQueue and displays logs in UI.
-// This allows any component to log to UI without needing a dashboard reference.
+// Uses drain pattern: blocks for first message, then drains all available messages
+// and updates UI in a single batch for better performance.
 func logConsumerLoop(dashboard *Dashboard) {
-    for msg := range common.GlobalLogQueue {
-        // Filter verbose logs - only show in VERY VERBOSE mode
-        if strings.Contains(msg, "[DEBUG") || 
-           strings.Contains(msg, "[DRAIN") || 
-           strings.Contains(msg, "[RECORD") || 
-           strings.Contains(msg, "[MONITOR") {
-            if dashboard.debugMode != DebugVeryVerbose {
-                continue // Skip verbose logs unless in very verbose mode
+    for {
+        // 1. Wait for first message (BLOCKS)
+        msg, ok := <-common.GlobalLogQueue
+        if !ok {
+            return // Channel closed
+        }
+        
+        // 2. Accumulate this message if it passes filter
+        batch := make([]string, 0, 100)
+        if shouldDisplayLog(msg.Level, dashboard.verbosityLevel) {
+            batch = append(batch, msg.Format())
+        }
+        
+        // 3. Drain ALL additional messages that are ready (NON-BLOCKING)
+        drained := false
+        for !drained {
+            select {
+            case msg2, ok := <-common.GlobalLogQueue:
+                if !ok {
+                    drained = true
+                    break
+                }
+                if shouldDisplayLog(msg2.Level, dashboard.verbosityLevel) {
+                    batch = append(batch, msg2.Format())
+                }
+            default:
+                // No more messages available, exit drain loop
+                drained = true
             }
         }
-        dashboard.Log(msg)
+        
+        // 4. Write ALL logs in a single UI update
+        if len(batch) > 0 {
+            dashboard.LogBatch(batch)
+        }
     }
 }
 
-// CaptureSettings interface matches the one in packets package
-type CaptureSettings interface {
-    GetCaptureServer() bool
-    GetCaptureClient() bool
-}
-
-func uiConsumerLoop(dashboard *Dashboard, captureSettings CaptureSettings) {
-    for pktInterface := range common.GlobalUIQueue {
-        // Cast from interface{} to *packets.ParsedPacket
-        pkt, ok := pktInterface.(*packets.ParsedPacket)
-        if !ok {
-            continue // Invalid type, skip
-        }
-        processPacketForUI(pkt, dashboard, captureSettings)
+// shouldDisplayLog determines if a log message should be displayed based on level and verbosity
+func shouldDisplayLog(level common.LogLevel, verbosity VerbosityLevel) bool {
+    // Always show errors, warnings, and info
+    if level == common.LogError || level == common.LogWarning || level == common.LogInfo {
+        return true
     }
-}
-
-func processPacketForUI(pkt *packets.ParsedPacket, dashboard *Dashboard, captureSettings CaptureSettings) {
-    // Filter by direction based on capture settings
-    if pkt.Direction == common.ServerToClient && !captureSettings.GetCaptureServer() {
-        return
+	
+    // Verbose logs require at least Verbose level
+    if level == common.LogVerbose {
+        return verbosity == VerbosityVerbose || verbosity == VerbosityVeryVerbose
     }
-    if pkt.Direction == common.ClientToServer && !captureSettings.GetCaptureClient() {
-        return
+	
+    // VeryVerbose logs require VeryVerbose level
+    if level == common.LogVeryVerbose {
+        return verbosity == VerbosityVeryVerbose
     }
-
-    // Look up packet spec
-    var spec *common.PacketSpec
-    if pkt.Direction == common.ServerToClient {
-        spec = receive.PacketDatabase[pkt.Opcode]
-    } else {
-        spec = send.PacketDatabase[pkt.Opcode]
-    }
-
-    if spec == nil {
-        // Unknown packet
-        if dashboard.IsShowWarnings() {
-            dashboard.LogUnknown(pkt.ConnectionID, pkt.Direction, pkt.Opcode, len(pkt.Payload), pkt.Payload, pkt.Checksum)
-        }
-        return
-    }
-
-    // Known packet - log to UI if debug mode is on
-    desc := spec.Desc
-    if desc == "" {
-        desc = "Unknown"
-    }
-
-    if dashboard.IsDebugMode() {
-        dashboard.LogPacket(pkt.ConnectionID, pkt.Direction, pkt.Opcode, len(pkt.Payload), desc, pkt.Payload, pkt.Checksum)
-    }
-
-    // Call deserializer handler if exists
-    if spec.Handler != nil {
-        handlerValue := reflect.ValueOf(spec.Handler)
-        if handlerValue.Kind() == reflect.Ptr {
-            handlerValue = handlerValue.Elem()
-        }
-
-        baseField := handlerValue.FieldByName("BaseDeserializer")
-        if baseField.IsValid() && baseField.CanSet() {
-            baseField.Set(reflect.ValueOf(common.BaseDeserializer{
-                ConnID:     pkt.ConnectionID,
-                Timestamp:  pkt.Timestamp.Unix(),
-                Payload:    pkt.Payload,
-                SourceIP:   pkt.SourceIP,
-                SourcePort: pkt.SourcePort,
-                DestIP:     pkt.DestIP,
-                DestPort:   pkt.DestPort,
-            }))
-        }
-
-        spec.Handler.Deserialize()
-    }
+	
+    return true
 }

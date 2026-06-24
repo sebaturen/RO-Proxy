@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"roproxy/internal/common"
 	"roproxy/internal/proxy"
 )
 
@@ -20,8 +21,8 @@ func (d *Dashboard) toggleRecording() {
 	})
 	
 	if newState {
-		d.Log("[green]Recording started (raw chunks will be saved per connection)[-]")
+		common.Log(common.LogProxy, common.LogInfo, "[green]Recording started (raw chunks will be saved per connection)[-]")
 	} else {
-		d.Log("[yellow]Recording stopped[-]")
+		common.Log(common.LogProxy, common.LogInfo, "[yellow]Recording stopped[-]")
 	}
 }

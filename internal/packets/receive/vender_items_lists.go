@@ -100,7 +100,7 @@ func (v *VenderItemsLists) Deserialize() error {
 
     shopMap, hasMap := GetConnectionMap(v.ConnID)
     if !hasMap {
-        common.LogToUI("[yellow][%d] Vender items list received but no map info yet (vendor:%d, items:%d)[-]", v.ConnID, vendorID, len(items))
+        common.Log(common.LogPacket, common.LogWarning, "[%d] Vender items list received but no map info yet (vendor:%d, items:%d)", v.ConnID, vendorID, len(items))
         return nil
     }
 
@@ -141,7 +141,7 @@ func (v *VenderItemsLists) Deserialize() error {
         "timestamp":    v.Timestamp,
     }
 
-    common.LogToUI("[cyan][%d] Sending vender items to API: vendor %d on map %s (%d items)[-]", v.ConnID, vendorID, shopMap, len(items))
+    common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Sending vender items to API: vendor %d on map %s (%d items)", v.ConnID, vendorID, shopMap, len(items))
     common.SendToAPI("vending/items", data)
 
     return nil

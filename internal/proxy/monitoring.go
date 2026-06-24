@@ -27,7 +27,7 @@ const (
 // Logs warnings when thresholds are exceeded but does NOT crash (crash happens on overflow).
 func StartMonitoring() {
     go monitoringLoop()
-    common.LogToUI("[green][MONITOR] Monitoring started (interval: 1 minute)[-]")
+    common.Log(common.LogMonitor, common.LogInfo, "Monitoring started (interval: 1 minute)")
 }
 
 func monitoringLoop() {
@@ -44,23 +44,14 @@ func collectStats() MonitoringStats {
     var memStats runtime.MemStats
     runtime.ReadMemStats(&memStats)
     
-    uiQueueSize := 0
-    if common.GlobalUIQueue != nil {
-        uiQueueSize = len(common.GlobalUIQueue)
-    }
-    
     apiQueueSize := 0
-    if GlobalAPIQueue != nil {
-        apiQueueSize = len(GlobalAPIQueue)
-    }
-    
     apiConsumer := common.GetAPIConsumer()
     if apiConsumer != nil {
         apiQueueSize = apiConsumer.QueueSize()
     }
     
     return MonitoringStats{
-        UIQueueSize:      uiQueueSize,
+        UIQueueSize:      0, // No longer used
         APIQueueSize:     apiQueueSize,
         ActiveGoroutines: runtime.NumGoroutine(),
         MemoryUsageMB:    memStats.Sys / 1024 / 1024,
@@ -71,33 +62,17 @@ func collectStats() MonitoringStats {
 func checkThresholds(stats MonitoringStats) {
     warningThreshold := (bufferCapacity * bufferWarningPercent) / 100
     
-    // Check UI queue
-    if stats.UIQueueSize > warningThreshold {
-        percent := (stats.UIQueueSize * 100) / bufferCapacity
-        common.LogToUI("[yellow][MONITOR] WARNING: UI queue at %d%% capacity (%d/%d packets)[-]", 
-            percent, stats.UIQueueSize, bufferCapacity)
-    }
-    
     // Check API queue
     if stats.APIQueueSize > warningThreshold {
         percent := (stats.APIQueueSize * 100) / bufferCapacity
-        common.LogToUI("[yellow][MONITOR] WARNING: API queue at %d%% capacity (%d/%d items)[-]", 
-            percent, stats.APIQueueSize, bufferCapacity)
+        common.Log(common.LogMonitor, common.LogWarning, "API queue at %d%% capacity (%d/%d items)", percent, stats.APIQueueSize, bufferCapacity)
     }
     
     // Check memory
     if stats.MemoryUsageMB > memoryWarningMB {
-        common.LogToUI("[red][MONITOR] WARNING: Memory usage at %d MB (threshold: %d MB)[-]", 
-            stats.MemoryUsageMB, memoryWarningMB)
+        common.Log(common.LogMonitor, common.LogWarning, "Memory usage at %d MB (threshold: %d MB)", stats.MemoryUsageMB, memoryWarningMB)
     }
     
     // Log stats (verbose info)
-    common.LogToUI("[gray][MONITOR] Stats - Goroutines: %d, Memory: %d MB (Alloc: %d MB), UI Queue: %d, API Queue: %d[-]",
-        stats.ActiveGoroutines, stats.MemoryUsageMB, stats.MemoryAllocMB, stats.UIQueueSize, stats.APIQueueSize)
-}
-
-// GetCurrentStats returns current monitoring statistics for display.
-// Can be called from dashboard or other components for real-time stats.
-func GetCurrentStats() MonitoringStats {
-    return collectStats()
+    common.Log(common.LogMonitor, common.LogVerbose, "Stats - Goroutines: %d, Memory: %d MB (Alloc: %d MB), API Queue: %d", stats.ActiveGoroutines, stats.MemoryUsageMB, stats.MemoryAllocMB, stats.APIQueueSize)
 }

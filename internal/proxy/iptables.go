@@ -2,13 +2,30 @@ package proxy
 
 import (
     "fmt"
+    "os"
     "os/exec"
-    "strings"
 )
 
 const (
     ipsetName = "ro-servers"
 )
+
+func InitializeIPTables(targetIPs []string, proxyPort int) error {
+    if err := VerifyIPTablesSetup(); err != nil {
+        fmt.Fprintf(os.Stderr, "iptables verification failed: %v\n", err)
+        fmt.Fprintln(os.Stderr, "Make sure you:")
+        fmt.Fprintln(os.Stderr, "  1. Run as root (sudo ./roproxy)")
+        fmt.Fprintln(os.Stderr, "  2. Have iptables and ipset installed")
+        os.Exit(1)
+    }
+
+    if err := SetupIPTables(targetIPs, proxyPort); err != nil {
+        fmt.Fprintf(os.Stderr, "Failed to setup iptables: %v\n", err)
+        os.Exit(1)
+    }
+
+    return nil
+}
 
 func SetupIPTables(targetIPs []string, proxyPort int) error {
     if err := setupIPSet(targetIPs); err != nil {
@@ -93,35 +110,4 @@ func VerifyIPTablesSetup() error {
     }
 
     return nil
-}
-
-func GetIPTablesStatus(proxyPort int) string {
-    var status strings.Builder
-
-    output, err := exec.Command("ipset", "list", ipsetName).CombinedOutput()
-    if err != nil {
-        status.WriteString(fmt.Sprintf("ipset '%s': not found\n", ipsetName))
-    } else {
-        lines := strings.Split(string(output), "\n")
-        for _, line := range lines {
-            if strings.Contains(line, "Number of entries:") {
-                status.WriteString(fmt.Sprintf("ipset '%s': %s\n", ipsetName, strings.TrimSpace(line)))
-                break
-            }
-        }
-    }
-
-    portStr := fmt.Sprintf("%d", proxyPort)
-    checkCmd := exec.Command("iptables", "-t", "nat", "-C", "PREROUTING",
-        "-p", "tcp",
-        "-m", "set", "--match-set", ipsetName, "dst",
-        "-j", "REDIRECT", "--to-port", portStr)
-
-    if checkCmd.Run() == nil {
-        status.WriteString(fmt.Sprintf("iptables REDIRECT rule: active (port %d)\n", proxyPort))
-    } else {
-        status.WriteString("iptables REDIRECT rule: not found\n")
-    }
-
-    return status.String()
 }

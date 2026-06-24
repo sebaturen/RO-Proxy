@@ -6,9 +6,9 @@ import (
     "context"
     "encoding/binary"
     "fmt"
-    "log"
     "net"
     "os"
+    "reflect"
     "strconv"
     "strings"
     "sync"
@@ -20,12 +20,6 @@ import (
     "roproxy/internal/packets/receive"
     "roproxy/internal/packets/send"
 )
-
-// CaptureSettings defines which packet directions to capture
-type CaptureSettings interface {
-    GetCaptureServer() bool
-    GetCaptureClient() bool
-}
 
 type Connection struct {
     ID           uint64
@@ -47,7 +41,7 @@ type Connection struct {
     recordMutex  sync.Mutex
 }
 
-func NewConnection(id uint64, clientConn net.Conn, serverAddr string, verbose bool, proxy CaptureSettings) (*Connection, error) {
+func NewConnection(id uint64, clientConn net.Conn, serverAddr string) (*Connection, error) {
     serverConn, err := net.DialTimeout("tcp", serverAddr, 10*time.Second)
     if err != nil {
         return nil, err
@@ -68,16 +62,16 @@ func NewConnection(id uint64, clientConn net.Conn, serverAddr string, verbose bo
     return conn, nil
 }
 
-func (c *Connection) Start(ctx context.Context, verbose bool) {
+func (c *Connection) Start(ctx context.Context) {
     connCtx, cancel := context.WithCancel(ctx)
     c.cancel = cancel
     
     // Debug log connection addresses
-    common.LogToUI("[gray][DEBUG] Connection #%d started: ClientAddr='%s', ServerAddr='%s'[-]", c.ID, c.ClientAddr, c.ServerAddr)
+    common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d started: ClientAddr='%s', ServerAddr='%s'", c.ID, c.ClientAddr, c.ServerAddr)
     
     c.wg.Add(3)
-    go c.relayClientToServer(connCtx, verbose)
-    go c.relayServerToClient(connCtx, verbose)
+    go c.relayClientToServer(connCtx)
+    go c.relayServerToClient(connCtx)
     go c.workerLoop(connCtx)
 }
 
@@ -102,7 +96,7 @@ func (c *Connection) Close() {
     receive.ClearConnectionMap(c.ID)
 }
 
-func (c *Connection) relayClientToServer(ctx context.Context, verbose bool) {
+func (c *Connection) relayClientToServer(ctx context.Context) {
     defer c.wg.Done()
     defer c.cancel() // Cancel all goroutines when this relay exits
 
@@ -143,12 +137,13 @@ func (c *Connection) relayClientToServer(ctx context.Context, verbose bool) {
         select {
         case c.RawChunkBuffer <- chunk:
         default:
-            log.Fatalf("CRITICAL: Connection #%d buffer overflow - worker cannot keep up with network traffic (capacity: 100,000)", c.ID)
+            common.Log(common.LogProxy, common.LogError, "CRITICAL: Connection #%d buffer overflow - worker cannot keep up with network traffic (capacity: 100,000)", c.ID)
+            panic(fmt.Sprintf("Connection #%d: RawChunkBuffer overflow", c.ID))
         }
     }
 }
 
-func (c *Connection) relayServerToClient(ctx context.Context, verbose bool) {
+func (c *Connection) relayServerToClient(ctx context.Context) {
     defer c.wg.Done()
     defer c.cancel() // Cancel all goroutines when this relay exits
 
@@ -189,7 +184,8 @@ func (c *Connection) relayServerToClient(ctx context.Context, verbose bool) {
         select {
         case c.RawChunkBuffer <- chunk:
         default:
-            log.Fatalf("CRITICAL: Connection #%d buffer overflow - worker cannot keep up with network traffic (capacity: 100,000)", c.ID)
+            common.Log(common.LogProxy, common.LogError, "CRITICAL: Connection #%d buffer overflow - worker cannot keep up with network traffic (capacity: 100,000)", c.ID)
+            panic(fmt.Sprintf("Connection #%d: RawChunkBuffer overflow", c.ID))
         }
     }
 }
@@ -247,7 +243,7 @@ func (c *Connection) processChunk(chunk *packets.RawChunk, clientBuffer, serverB
 }
 
 func (c *Connection) drainRemainingPackets(clientBuffer, serverBuffer *bytes.Buffer) {
-    common.LogToUI("[yellow][DRAIN] Connection #%d draining remaining packets (buffer size: %d)[-]", c.ID, len(c.RawChunkBuffer))
+    common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d draining remaining packets (buffer size: %d)", c.ID, len(c.RawChunkBuffer))
     
     processed := 0
     timeout := time.After(500 * time.Millisecond)
@@ -258,7 +254,7 @@ func (c *Connection) drainRemainingPackets(clientBuffer, serverBuffer *bytes.Buf
             if !ok {
                 // Channel closed
                 c.waitForDeserializers()
-                common.LogToUI("[green][DRAIN] Connection #%d drained %d packets[-]", c.ID, processed)
+                common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d drained %d packets", c.ID, processed)
                 return
             }
             
@@ -268,7 +264,7 @@ func (c *Connection) drainRemainingPackets(clientBuffer, serverBuffer *bytes.Buf
         case <-timeout:
             // Timeout reached - stop draining
             c.waitForDeserializers()
-            common.LogToUI("[yellow][DRAIN] Connection #%d drain timeout - processed %d packets, %d remaining[-]", 
+            common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d drain timeout - processed %d packets, %d remaining", 
                 c.ID, processed, len(c.RawChunkBuffer))
             return
         }
@@ -283,12 +279,12 @@ func (c *Connection) waitForDeserializers() {
         // Try to acquire all 100 slots - if successful, no deserializers running
         if c.semaphore.TryAcquire(100) {
             c.semaphore.Release(100)
-            common.LogToUI("[gray][DRAIN] Connection #%d - all deserializers finished[-]", c.ID)
+            common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d - all deserializers finished", c.ID)
             return
         }
         
         if time.Now().After(deadline) {
-            common.LogToUI("[yellow][DRAIN] Connection #%d - timeout waiting for deserializers[-]", c.ID)
+            common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d - timeout waiting for deserializers", c.ID)
             return
         }
         
@@ -305,7 +301,7 @@ func (c *Connection) recordRawChunk(chunk *packets.RawChunk) {
     // Lazy init: create file on first chunk if recording is active
     if c.recordFile == nil {
         if err := c.createRecordFile(); err != nil {
-            common.LogToUI("[red][RECORD] Connection #%d failed to create recording file: %v[-]", c.ID, err)
+            common.Log(common.LogRecord, common.LogError, "Connection #%d failed to create recording file: %v", c.ID, err)
             return
         }
     }
@@ -339,7 +335,7 @@ func (c *Connection) createRecordFile() error {
     c.recordFile = file
     c.recordWriter = bufio.NewWriter(file)
     
-    common.LogToUI("[green][RECORD] Connection #%d started recording: %s[-]", c.ID, filename)
+    common.Log(common.LogRecord, common.LogVerbose, "Connection #%d started recording: %s", c.ID, filename)
     return nil
 }
 
@@ -363,7 +359,7 @@ func (c *Connection) closeRecordFile() {
     
     if c.recordFile != nil {
         c.recordFile.Close()
-        common.LogToUI("[yellow][RECORD] Connection #%d recording closed[-]", c.ID)
+        common.Log(common.LogRecord, common.LogVerbose, "Connection #%d recording closed", c.ID)
         c.recordFile = nil
     }
 }
@@ -373,13 +369,53 @@ func (c *Connection) spawnDeserializer(pkt *packets.ParsedPacket) {
     // Semaphore acquired inside to prevent blocking the worker
     go func() {
         // Acquire semaphore (blocks if 100 deserializers already running)
-        // This blocks the goroutine, NOT the worker
         c.semaphore.Acquire(context.Background(), 1)
         defer c.semaphore.Release(1)
         
-        // Send to GlobalUIQueue (will panic if queue is full - fail-fast)
-        // UI consumer will handle logging and calling deserializers
-        common.SendPacketToUI(pkt)
+        // Look up packet spec
+        var spec *common.PacketSpec
+        if pkt.Direction == common.ServerToClient {
+            spec = receive.PacketDatabase[pkt.Opcode]
+        } else {
+            spec = send.PacketDatabase[pkt.Opcode]
+        }
+        
+        // Format packet info for logging
+        dirSymbol := common.FormatDirection(pkt.Direction)
+        checksumStr := common.FormatChecksum(pkt.Checksum)
+        
+        desc := ""
+        if spec != nil && spec.Desc != "" {
+            desc = spec.Desc
+        }
+        descDisplay := common.FormatDesc(desc)
+        payloadHex := common.FormatPayload(pkt.Payload, true)
+        
+        // Log packet
+        common.Log(common.LogPacket, common.LogVerbose, "[yellow][#%d][-]%s[yellow][0x%04X][-]%s [white]size=%d%s payload=%s[-]", pkt.ConnectionID, dirSymbol, pkt.Opcode, descDisplay, len(pkt.Payload), checksumStr, payloadHex)
+        
+        // Call deserializer handler if exists
+        if spec != nil && spec.Handler != nil {
+            handlerValue := reflect.ValueOf(spec.Handler)
+            if handlerValue.Kind() == reflect.Ptr {
+                handlerValue = handlerValue.Elem()
+            }
+
+            baseField := handlerValue.FieldByName("BaseDeserializer")
+            if baseField.IsValid() && baseField.CanSet() {
+                baseField.Set(reflect.ValueOf(common.BaseDeserializer{
+                    ConnID:     pkt.ConnectionID,
+                    Timestamp:  pkt.Timestamp.Unix(),
+                    Payload:    pkt.Payload,
+                    SourceIP:   pkt.SourceIP,
+                    SourcePort: pkt.SourcePort,
+                    DestIP:     pkt.DestIP,
+                    DestPort:   pkt.DestPort,
+                }))
+            }
+
+            spec.Handler.Deserialize()
+        }
     }()
 }
 
@@ -418,7 +454,10 @@ func (c *Connection) tryParsePackets(buffer *bytes.Buffer, direction common.Pack
             if buffer.Len() >= 4 {
                 packetSize = int(binary.LittleEndian.Uint16(bufData[2:4]))
                 if packetSize < 2 || packetSize > 10*1024*1024 {
-                    log.Fatalf("CRITICAL: Invalid packet size %d (opcode=0x%04X, conn=%d)", packetSize, opcode, c.ID)
+                    payload := common.FormatPayload(bufData, false)
+                    ptDir := common.FormatDirection(direction)
+                    common.Log(common.LogProxy, common.LogError, "CRITICAL: Invalid packet size %d (dir=%s, opcode=0x%04X, conn=%d) payload %s", packetSize, ptDir, opcode, c.ID, payload)
+                    packetSize = 2 // remove head and continue parsing next packages
                 }
                 valid = buffer.Len() >= packetSize
             }
