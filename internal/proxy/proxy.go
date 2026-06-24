@@ -33,6 +33,7 @@ func New(cfg *config.Config) *Proxy {
 
 func Start(p *Proxy, ctx context.Context) {
     SetProxy(p)
+    SetRecording(false)
     go func ()  {
         p.startListen(ctx)
     }()

@@ -1,11 +1,19 @@
 package proxy
 
 import (
-    "sync/atomic"
+    "os"
+    "bufio"
+    "sync"
 )
+type Recording struct {
+    status      bool
+    file        *os.File
+    writer      *bufio.Writer
+    recordMutex  sync.Mutex
+}
 
 var (
-    GlobalRecording atomic.Bool
+    globalRecording *Recording
     globalProxy     *Proxy
 )
 
@@ -14,15 +22,33 @@ func GetProxy() *Proxy {
     return globalProxy
 }
 
+func GetRecording() *Recording {
+    return globalRecording
+}
+
 // SetProxy sets the global proxy instance.
 func SetProxy(p *Proxy) {
     globalProxy = p
 }
 
 func IsRecording() bool {
-    return GlobalRecording.Load()
+    return globalRecording.status
 }
 
 func SetRecording(enabled bool) {
-    GlobalRecording.Store(enabled)
+    if globalRecording != nil && enabled != globalRecording.status {
+        if enabled == false && globalRecording.file != nil {
+            if globalRecording.writer != nil {
+                globalRecording.writer.Flush()
+            }
+        }
+    }
+    if globalRecording == nil || enabled != globalRecording.status {
+        globalRecording = &Recording{
+            status: enabled,
+            file: nil,
+            writer: nil,
+        }
+    }
+    globalRecording.status = enabled
 }

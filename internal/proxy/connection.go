@@ -34,11 +34,6 @@ type Connection struct {
     cancel         context.CancelFunc
     semaphore      *semaphore.Weighted
     wg             sync.WaitGroup
-    
-    // Recording (for reverse engineering)
-    recordFile   *os.File
-    recordWriter *bufio.Writer
-    recordMutex  sync.Mutex
 }
 
 func NewConnection(id uint64, clientConn net.Conn, serverAddr string) (*Connection, error) {
@@ -293,74 +288,64 @@ func (c *Connection) waitForDeserializers() {
 }
 
 // recordRawChunk writes raw chunk to recording file (for reverse engineering).
-// Format: timestamp|conn_id|direction|length|hex_bytes
 func (c *Connection) recordRawChunk(chunk *packets.RawChunk) {
-    c.recordMutex.Lock()
-    defer c.recordMutex.Unlock()
+    r := GetRecording()
+    r.recordMutex.Lock()
+    defer r.recordMutex.Unlock()
     
     // Lazy init: create file on first chunk if recording is active
-    if c.recordFile == nil {
-        if err := c.createRecordFile(); err != nil {
+    if r.file == nil {
+        if err := createRecordFile(r); err != nil {
             common.Log(common.LogRecord, common.LogError, "Connection #%d failed to create recording file: %v", c.ID, err)
             return
         }
     }
     
-    dirStr := "CS"
-    if chunk.Direction == common.ServerToClient {
-        dirStr = "SC"
-    }
+    dirStr := common.FormatDirection(chunk.Direction)
+    hexData := common.FormatPayload(chunk.Data, false)
+    line := fmt.Sprintf("%d;%d;%s;%d;%s\n", chunk.Timestamp.Unix(), c.ID, dirStr, len(chunk.Data), hexData)
     
-    hexData := fmt.Sprintf("%X", chunk.Data)
-    line := fmt.Sprintf("%d|%d|%s|%d|%s\n", 
-        chunk.Timestamp.Unix(), c.ID, dirStr, len(chunk.Data), hexData)
-    
-    c.recordWriter.WriteString(line)
+    r.writer.WriteString(line)
 }
 
-func (c *Connection) createRecordFile() error {
+func createRecordFile(r *Recording) error {
     // Ensure recordings directory exists
     if err := os.MkdirAll("recordings", 0755); err != nil {
         return fmt.Errorf("failed to create recordings directory: %w", err)
     }
     
     timestamp := time.Now().Format("20060102_150405")
-    filename := fmt.Sprintf("recordings/%d_%s.txt", c.ID, timestamp)
+    filename := fmt.Sprintf("recordings/%s.txt", timestamp)
     
     file, err := os.Create(filename)
     if err != nil {
         return fmt.Errorf("failed to create file: %w", err)
     }
     
-    c.recordFile = file
-    c.recordWriter = bufio.NewWriter(file)
+    r.file = file
+    r.writer = bufio.NewWriter(file)
     
-    common.Log(common.LogRecord, common.LogVerbose, "Connection #%d started recording: %s", c.ID, filename)
+    common.Log(common.LogRecord, common.LogInfo, "Started recording: %s", filename)
     return nil
 }
 
 func (c *Connection) flushRecording() {
-    c.recordMutex.Lock()
-    defer c.recordMutex.Unlock()
+    r := GetRecording()
+    r.recordMutex.Lock()
+    defer r.recordMutex.Unlock()
     
-    if c.recordWriter != nil {
-        c.recordWriter.Flush()
+    if r.writer != nil {
+        r.writer.Flush()
     }
 }
 
 func (c *Connection) closeRecordFile() {
-    c.recordMutex.Lock()
-    defer c.recordMutex.Unlock()
+    r := GetRecording()
+    r.recordMutex.Lock()
+    defer r.recordMutex.Unlock()
     
-    if c.recordWriter != nil {
-        c.recordWriter.Flush()
-        c.recordWriter = nil
-    }
-    
-    if c.recordFile != nil {
-        c.recordFile.Close()
-        common.Log(common.LogRecord, common.LogVerbose, "Connection #%d recording closed", c.ID)
-        c.recordFile = nil
+    if r.writer != nil {
+        r.writer.Flush()
     }
 }
 
