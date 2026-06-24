@@ -174,7 +174,9 @@ func (ac *APIConsumer) sendRequest(req APIRequest) {
             return
         }
 
-        Log(LogAPI, LogVerbose, "Request failed with status %d (will retry)", resp.StatusCode)
+        Log(LogAPI, LogVerbose, "[%d] Request failed with status %d (will retry) [%s]", ac.queue.Size(), resp.StatusCode, jsonData)
+        ac.queue.Push(req)
         time.Sleep(1 * time.Second)
+        return
     }
 }
