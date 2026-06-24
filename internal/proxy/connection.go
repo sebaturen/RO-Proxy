@@ -124,7 +124,7 @@ func (c *Connection) relayClientToServer(ctx context.Context) {
 
         chunk := &packets.RawChunk{
             ConnectionID: c.ID,
-            Timestamp:    time.Now(),
+            Timestamp:    time.Now().Unix(),
             Direction:    common.ClientToServer,
             Data:         rawData,
         }
@@ -171,7 +171,7 @@ func (c *Connection) relayServerToClient(ctx context.Context) {
 
         chunk := &packets.RawChunk{
             ConnectionID: c.ID,
-            Timestamp:    time.Now(),
+            Timestamp:    time.Now().Unix(),
             Direction:    common.ServerToClient,
             Data:         rawData,
         }
@@ -303,7 +303,7 @@ func (c *Connection) recordRawChunk(chunk *packets.RawChunk) {
     
     dirStr := common.FormatDirection(chunk.Direction)
     hexData := common.FormatPayload(chunk.Data, false)
-    line := fmt.Sprintf("%d;%d;%s;%d;%s\n", chunk.Timestamp.Unix(), c.ID, dirStr, len(chunk.Data), hexData)
+    line := fmt.Sprintf("%d;%d;%s;%d;%s\n", chunk.Timestamp, c.ID, dirStr, len(chunk.Data), hexData)
     
     r.writer.WriteString(line)
 }
@@ -401,7 +401,7 @@ func (c *Connection) spawnDeserializer(pkt *packets.ParsedPacket) {
     }()
 }
 
-func (c *Connection) tryParsePackets(buffer *bytes.Buffer, direction common.PacketDirection, timestamp time.Time) []*packets.ParsedPacket {
+func (c *Connection) tryParsePackets(buffer *bytes.Buffer, direction common.PacketDirection, timestamp int64) []*packets.ParsedPacket {
     var result []*packets.ParsedPacket
 
     for {

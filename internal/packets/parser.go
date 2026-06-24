@@ -2,14 +2,13 @@ package packets
 
 import (
 	"roproxy/internal/common"
-	"time"
 )
 
 // RawChunk represents a raw TCP stream chunk (unparsed).
 // Sent from relay goroutines to worker for parsing.
 type RawChunk struct {
     ConnectionID uint64
-    Timestamp    time.Time
+    Timestamp    int64
     Direction    common.PacketDirection
     Data         []byte
 }
@@ -18,7 +17,7 @@ type RawChunk struct {
 // Sent from worker to deserializer goroutines.
 type ParsedPacket struct {
     ConnectionID uint64
-    Timestamp    time.Time
+    Timestamp    int64
     Direction    common.PacketDirection
     Opcode       uint16
     Payload      []byte

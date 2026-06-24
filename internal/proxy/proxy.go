@@ -56,6 +56,7 @@ func (p *Proxy) startListen(ctx context.Context) error {
 
     for {
         clientConn, err := listener.Accept()
+        aceptTimer := time.Now()
         if err != nil {
             select {
             case <-ctx.Done():
@@ -65,6 +66,7 @@ func (p *Proxy) startListen(ctx context.Context) error {
             }
         }
 
+        common.Log(common.LogProxy, common.LogVeryVerbose, "Connection Accepted %s", aceptTimer)
         go p.handleConnection(ctx, clientConn)
     }
 }
