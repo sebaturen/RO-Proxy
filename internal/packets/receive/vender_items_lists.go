@@ -143,12 +143,10 @@ func (v *VenderItemsLists) Deserialize() error {
         "flag":         flag,
         "expired_date": expiredDate,
         "shop_items":   shopItems,
-        "PID":          v.ConnectionID,
-        "timestamp":    v.Timestamp,
     }
 
     common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Sending vender items to API: vendor %d on map %s (%d items)", v.ConnectionID, vendorID, shopMap, len(items))
-    common.SendToAPI("vending/items", data)
+    packets.SendToAPI(&v.ParsedPacket, "vending/items", data)
 
     return nil
 }

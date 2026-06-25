@@ -35,12 +35,10 @@ func (o *OfflineCloneFound) Deserialize() error {
         "map":      common.StringToHex(shopMap),
         "coord_x":  coordX,
         "coord_y":  coordY,
-        "PID":      o.ConnectionID,
-        "timestamp":o.Timestamp,
     }
 
     common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Sending offline clone to API: %s on map %s (ID:%d, Job:%d, Sex:%d, X:%d, Y:%d)", o.ConnectionID, name, shopMap, cloneID, jobID, sex, coordX, coordY)
-    common.SendToAPI("vending/offline_clone", data)
+    packets.SendToAPI(&o.ParsedPacket, "vending/offline_clone", data)
 
     return nil
 }

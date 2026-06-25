@@ -29,3 +29,11 @@ type ParsedPacket struct {
     DestIP     string
     DestPort   int
 }
+
+func SendToAPI(p *ParsedPacket, endpoint string, payload map[string]interface{}) {
+    
+    payload["PID"] = p.ConnectionID
+    payload["timestamp"] = p.Timestamp
+
+    common.SendToAPIInternal(endpoint, payload)
+}

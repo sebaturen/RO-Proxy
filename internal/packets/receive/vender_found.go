@@ -24,11 +24,9 @@ func (v *VenderFound) Deserialize() error {
         "vendor_id": vendorID,
         "shop_name": common.StringToHex(shopName),
         "shop_map":  common.StringToHex(shopMap),
-        "PID":       v.ConnectionID,
-        "timestamp": v.Timestamp,
     }
 
     common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Sending vendor to API: '%s' on map '%s' (ID:%d)", v.ConnectionID, shopName, shopMap, vendorID)
-    common.SendToAPI("vending/shop", data)
+    packets.SendToAPI(&v.ParsedPacket, "vending/shop", data)
     return nil
 }

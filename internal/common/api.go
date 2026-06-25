@@ -111,7 +111,8 @@ func InitAPIConsumer(cfg *config.Config) {
     Log(LogAPI, LogInfo, "Consumer goroutine started")
 }
 
-func SendToAPI(endpoint string, payload map[string]interface{}) {
+// Don't use directly, was used by the wrapper `SendToAPI`
+func SendToAPIInternal(endpoint string, payload map[string]interface{}) {
     if globalAPIConsumer == nil {
         Log(LogAPI, LogError, "SendToAPI called but globalAPIConsumer is nil (endpoint=%s)", endpoint)
         return

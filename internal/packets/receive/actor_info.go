@@ -183,12 +183,10 @@ func (a *ActorInfo) reportPlayer() {
 			"coord_x":   a.coordX,
 			"coord_y":   a.coordY,
 		},
-		"PID":       a.ConnectionID,
-		"timestamp": a.Timestamp,
 	}
 
 	common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Player detected: '%s' (JobID:%d, Lvl:%d) at %s (%d,%d)", a.ConnectionID, a.name, a.typeID, a.level, a.coordMap, a.coordX, a.coordY)
-	common.SendToAPI("character", data)
+	packets.SendToAPI(&a.ParsedPacket, "character", data)
 }
 
 func (a *ActorInfo) reportMonster() {
@@ -198,8 +196,6 @@ func (a *ActorInfo) reportMonster() {
 		"coord_x":   a.coordX,
 		"coord_y":   a.coordY,
 		"coord_map": common.StringToHex(a.coordMap),
-		"PID":       a.ConnectionID,
-		"timestamp": a.Timestamp,
 	}
 
 	common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Monster detected: TypeID:%d Lvl:%d at (%d,%d)", a.ConnectionID, a.typeID, a.level, a.coordX, a.coordY)
@@ -215,10 +211,8 @@ func (a *ActorInfo) reportPlayerMinimal() {
 		"party":       common.StringToHex(a.partyName),
 		"guild":       common.StringToHex(a.guildName),
 		"guild_title": common.StringToHex(a.guildTitle),
-		"PID":         a.ConnectionID,
-		"timestamp":   a.Timestamp,
 	}
 
 	common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Player party/guild info: '%s' (Party:'%s', Guild:'%s')", a.ConnectionID, a.name, a.partyName, a.guildName)
-	common.SendToAPI("character/party_guild", data)
+	packets.SendToAPI(&a.ParsedPacket, "character/party_guild", data)
 }
