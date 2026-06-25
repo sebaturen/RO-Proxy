@@ -40,8 +40,8 @@ func (sio *SpecialItemObtain) Deserialize() error {
 		"type": sio.itemId,
 		"received_item_id": sio.receivedItemId,
 		"from_item_id": sio.itemId,
-		"from_monster_code": sio.monsterCode,
-		"character_name": sio.characterName,
+		"from_monster_code": common.StringToHex(sio.monsterCode),
+		"character_name": common.StringToHex(sio.characterName),
 		"PID": sio.ConnectionID,
 		"timestamp": sio.Timestamp,
 	}

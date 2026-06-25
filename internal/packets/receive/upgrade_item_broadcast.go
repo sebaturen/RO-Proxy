@@ -16,7 +16,7 @@ func (ui *UpgradeItemBroadcast) Deserialize() error {
 	unknownVal := common.ReadUint16LE(ui.Payload, 30)
 
 	data := map[string]interface{}{
-		"character_name": characterName,
+		"character_name": common.StringToHex(characterName),
 		"item_id": itemId,
 		"level": level,
 		"unknown_val": unknownVal,
