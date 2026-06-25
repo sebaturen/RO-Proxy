@@ -36,7 +36,6 @@ func (v VerbosityLevel) String() string {
 
 type Dashboard struct {
 	app               *tview.Application
-	stats             *Stats
 	
 	// UI components
 	statsView         *tview.TextView
@@ -75,7 +74,6 @@ func NewDashboard() *Dashboard {
 	
 	d := &Dashboard{
 		app:              app,
-		stats:            NewStats(),
 		verbosityLevel:   VerbosityInfo,
 		fullTimestamp:    false,
 		connectionFilter: 0,
@@ -122,7 +120,7 @@ func (d *Dashboard) updateLoop() {
 }
 
 func (d *Dashboard) updateStats() {
-	stats := d.stats.Get()
+	stats := proxy.GetGlobalStats()
 	queueSize := 0
 	if globalAPI := common.GetAPIConsumer(); globalAPI != nil {
 		queueSize = globalAPI.QueueSize()
@@ -292,8 +290,4 @@ func formatBytes(bytes uint64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
-
-func (d *Dashboard) GetStats() *Stats {
-	return d.stats
 }

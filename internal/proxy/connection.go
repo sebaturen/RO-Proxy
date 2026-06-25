@@ -380,6 +380,10 @@ func (c *Connection) spawnDeserializer(pkt *packets.ParsedPacket) {
         common.Log(common.LogPacket, common.LogVerbose, "[yellow][#%d][-]%s[yellow][0x%04X][-]%s [white]size=%d%s payload=%s[-]", pkt.ConnectionID, dirSymbol, pkt.Opcode, descDisplay, len(pkt.Payload), checksumStr, payloadHex)
         
         // Call deserializer handler if exists
+        unknownPkt := true
+        if spec != nil {
+            unknownPkt = false // can or can't have handler but is know packet
+        }
         if spec != nil && spec.Handler != nil {
             handlerValue := reflect.ValueOf(spec.Handler)
             if handlerValue.Kind() == reflect.Ptr {
@@ -398,6 +402,7 @@ func (c *Connection) spawnDeserializer(pkt *packets.ParsedPacket) {
 
             spec.Handler.Deserialize()
         }
+        AddPacket(pkt.Direction, len(pkt.Payload), unknownPkt)
     }()
 }
 
