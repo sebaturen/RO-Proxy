@@ -105,9 +105,9 @@ func (d *Dashboard) buildFilterInput() {
 func (d *Dashboard) buildLayout() {
 	leftPanel := tview.NewFlex().
 		SetDirection(tview.FlexRow).
-		AddItem(d.statsView, 11, 0, false).
+		AddItem(d.statsView, 13, 0, false).
 		AddItem(d.connectionsView, 0, 1, false).
-		AddItem(d.controlsView, 14, 0, false)
+		AddItem(d.controlsView, 10, 0, false)
 
 	d.rootFlex = tview.NewFlex().
 		SetDirection(tview.FlexColumn).

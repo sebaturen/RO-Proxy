@@ -232,7 +232,7 @@ func (d *Dashboard) promptConnectionFilter() {
 	} else {
 		d.filterInput.SetText("")
 	}
-	d.filterInput.SetLabel("[yellow]→ Conn ID (Enter=apply, ESC=cancel, Q=quit): [-]")
+	d.filterInput.SetLabel("[yellow]→ Conn ID (Enter/ESC): [-]")
 	
 	d.app.QueueUpdateDraw(func() {
 		// Remove border to avoid "?" characters on SSH
@@ -270,6 +270,8 @@ func (d *Dashboard) LogBatch(messages []string) {
 			fmt.Fprintf(d.logsView, "%s\n", msg)
 		}
 	})
+
+	d.logsView.ScrollToEnd()
 }
 
 func colorBool(val bool, trueText, falseText string) string {
