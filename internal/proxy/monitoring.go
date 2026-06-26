@@ -155,9 +155,15 @@ func ReportCloseConnection(c *Connection) {
     }
 
     duration := time.Since(c.StartTime)
+    if duration.Minutes() < 1 {
+        common.Log(common.LogMonitor, common.LogVeryVerbose, "Close connection for to short event %d", duration)
+        return
+    }
+
+
     h := int(duration.Hours())
-	m := int(duration.Minutes()) % 60
-	s := int(duration.Seconds()) % 60
+    m := int(duration.Minutes()) % 60
+    s := int(duration.Seconds()) % 60
     durationStr := fmt.Sprintf("%02d:%02d:%02d", h, m, s)
 
     msg := DiscordMessage {
@@ -165,7 +171,7 @@ func ReportCloseConnection(c *Connection) {
     }
     payload, err := json.Marshal(msg)
     if err != nil {
-        common.Log(common.LogMonitor, common.LogError, fmt.Sprintf("Error to parse JSON on connection close discord notification %v"), err)
+        common.Log(common.LogMonitor, common.LogError, "Error to parse JSON on connection close discord notification %v", err)
         return
     }
 
