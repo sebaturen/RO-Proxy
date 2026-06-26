@@ -16,6 +16,7 @@ type Config struct {
     ListenPort int      `json:"listen_port"`
     TargetIPs  []string `json:"target_ips"`
     API        *APIConfig `json:"api,omitempty"`
+    DiscordWebhook string `json:"discord_webhook,omitempty"`
 }
 
 func Load(path string) (*Config, error) {

@@ -1,10 +1,16 @@
 package proxy
 
 import (
-    "runtime"
-    "time"
-    
-    "roproxy/internal/common"
+	"bytes"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"runtime"
+	"strings"
+	"time"
+
+	"roproxy/internal/common"
+	"roproxy/internal/config"
 )
 
 type MonitoringStats struct {
@@ -31,6 +37,7 @@ type GlobalStats struct {
     StatQueue           chan *PacketStat
 }
 var globalStats *GlobalStats
+var cfg *config.Config
 
 const (
     bufferCapacity       = 100000
@@ -39,14 +46,21 @@ const (
     monitoringInterval   = 1 * time.Minute
 )
 
+type DiscordMessage struct {
+    Content   string `json:"content"`
+    Username  string `json:"username,omitempty"`
+    AvatarURL string `json:"avatar_url,omitempty"`
+}
+
 // StartMonitoring starts a background goroutine that monitors system health.
 // Checks buffer sizes, memory usage, and goroutine count every 1 minute.
 // Logs warnings when thresholds are exceeded but does NOT crash (crash happens on overflow).
-func StartMonitoring() {
+func StartMonitoring(inCfg *config.Config) {
     globalStats = &GlobalStats{
         StartTime: time.Now(),
         StatQueue: make(chan *PacketStat, 1000),
     }
+    cfg = inCfg
     go monitoringStatusLoop()
     go monitoringLoop()
     common.Log(common.LogMonitor, common.LogInfo, "Monitoring started (interval: 1 minute)")
@@ -131,5 +145,44 @@ func AddPacket(direction common.PacketDirection, size int, unknown bool) {
         // success
     default:
         // queue full
+    }
+}
+
+func ReportCloseConnection(c *Connection) {
+    if strings.TrimSpace(cfg.DiscordWebhook) == "" {
+        common.Log(common.LogMonitor, common.LogVeryVerbose, "Discord configuration not set %s", cfg)
+        return
+    }
+
+    duration := time.Since(c.StartTime)
+    msg := DiscordMessage {
+        Content: fmt.Sprintf("Connection %d was close [Duration: %s]", c.ID, duration),
+    }
+    payload, err := json.Marshal(msg)
+    if err != nil {
+        common.Log(common.LogMonitor, common.LogError, fmt.Sprintf("Error to parse JSON on connection close discord notification %v"), err)
+        return
+    }
+
+    req, err := http.NewRequest("POST", cfg.DiscordWebhook, bytes.NewBuffer(payload))
+    if err != nil {
+        common.Log(common.LogMonitor, common.LogError, "Error on create discord notification request %v", err)
+        return
+    }
+
+    req.Header.Set("Content-Type", "application/json")
+    client := &http.Client{Timeout: 5 * time.Second}
+    resp, err := client.Do(req)
+    if err != nil {
+        common.Log(common.LogMonitor, common.LogError, "Error on send discord notification %v", err)
+        return
+    }
+    defer resp.Body.Close()
+
+    // Discord responde con un Status 204 No Content si todo salió bien
+    if resp.StatusCode == http.StatusNoContent {
+        common.Log(common.LogMonitor, common.LogVeryVerbose, "MSG sended successfull")
+    } else {
+        common.Log(common.LogMonitor, common.LogVeryVerbose, "Error send notification: %d", resp.StatusCode)
     }
 }

@@ -199,6 +199,7 @@ func (c *Connection) workerLoop(ctx context.Context) {
         select {
         case <-ctx.Done():
             // Graceful drain: process remaining packets before exit
+            ReportCloseConnection(c)
             c.drainRemainingPackets(clientBuffer, serverBuffer)
             return
             

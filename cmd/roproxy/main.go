@@ -52,7 +52,7 @@ func main() {
     // Proxy
     p := proxy.New(cfg)
     proxy.Start(p, ctx)
-    proxy.StartMonitoring()
+    proxy.StartMonitoring(cfg)
 
     // Run dashboard (blocks until quit)
     if err := dashboard.Start(); err != nil {
