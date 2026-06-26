@@ -495,6 +495,10 @@ func (c *Connection) tryParsePackets(buffer *bytes.Buffer, direction common.Pack
         if spec.Size == -1 {
             startData = 4
         }
+        if startData > len(packetData) {
+            common.Log(common.LogProxy, common.LogError, "Strange package... len is undeterminated len: %d - packet %s", startData, common.FormatPayload(packetData, false))
+            startData = 0
+        }
 
         result = append(result, &packets.ParsedPacket{
             ConnectionID: c.ID,
