@@ -155,8 +155,13 @@ func ReportCloseConnection(c *Connection) {
     }
 
     duration := time.Since(c.StartTime)
+    h := int(duration.Hours())
+	m := int(duration.Minutes()) % 60
+	s := int(duration.Seconds()) % 60
+    durationStr := fmt.Sprintf("%02d:%02d:%02d", h, m, s)
+
     msg := DiscordMessage {
-        Content: fmt.Sprintf("Connection %d was close [Duration: %s]", c.ID, duration),
+        Content: fmt.Sprintf("Connection %d was close [Duration: %s]", c.ID, durationStr),
     }
     payload, err := json.Marshal(msg)
     if err != nil {
