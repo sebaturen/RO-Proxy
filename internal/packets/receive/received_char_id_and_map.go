@@ -20,7 +20,7 @@ func (r *ReceivedCharIdAndMap) Deserialize() error {
 
     common.Log(common.LogPacket, common.LogVeryVerbose, "ReceivedCharIdAndMap - ConnID=%d, mapName='%s', mapURL='%s'", r.ConnectionID, mapName, mapURL)
 
-    SetConnectionMap(r.ConnectionID, mapName)
+    packets.SetConnectionMapChar(charID, r.ConnectionID, mapName)
     
     parts := strings.Split(mapURL, ":")
     hostname := parts[0]
@@ -37,7 +37,7 @@ func (r *ReceivedCharIdAndMap) Deserialize() error {
     }
     
     destIP := ips[0].String()
-    SetPendingMapByDestination(destIP, port, mapName)
+    packets.SetPendingMapByDestination(destIP, port, mapName)
     
     if dnsDuration > 100*time.Millisecond {
         common.Log(common.LogPacket, common.LogWarning, "[%d] DNS lookup SLOW for %s: %dms - Map: %s - Next: %s:%d (%s)", r.ConnectionID, hostname, dnsDuration.Milliseconds(), mapName, hostname, port, destIP)

@@ -17,7 +17,7 @@ func (o *OfflineCloneFound) Deserialize() error {
     sex := o.Payload[12]
     name := common.ReadNullTerminatedString(o.Payload, 35)
 
-    shopMap, hasMap := GetConnectionMap(o.ConnectionID)
+    shopMap, hasMap := packets.GetConnectionMap(o.ConnectionID)
     if !hasMap {
         common.Log(common.LogPacket, common.LogWarning, "[%d] Offline clone found but no map info yet: %s (ID:%d)", o.ConnectionID, name, cloneID)
         return nil

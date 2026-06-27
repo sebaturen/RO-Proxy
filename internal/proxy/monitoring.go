@@ -11,6 +11,7 @@ import (
 
 	"roproxy/internal/common"
 	"roproxy/internal/config"
+    "roproxy/internal/packets"
 )
 
 type MonitoringStats struct {
@@ -165,9 +166,10 @@ func ReportCloseConnection(c *Connection) {
     m := int(duration.Minutes()) % 60
     s := int(duration.Seconds()) % 60
     durationStr := fmt.Sprintf("%02d:%02d:%02d", h, m, s)
+    mapName, _ := packets.GetConnectionMap(c.ID)
 
     msg := DiscordMessage {
-        Content: fmt.Sprintf("Connection %d was close [Duration: %s]", c.ID, durationStr),
+        Content: fmt.Sprintf("Connection %d was close [Duration: %s] in map %s", c.ID, durationStr, mapName),
     }
     payload, err := json.Marshal(msg)
     if err != nil {

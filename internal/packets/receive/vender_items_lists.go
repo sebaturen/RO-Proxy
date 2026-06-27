@@ -104,7 +104,7 @@ func (v *VenderItemsLists) Deserialize() error {
         items = append(items, item)
     }
 
-    shopMap, hasMap := GetConnectionMap(v.ConnectionID)
+    shopMap, hasMap := packets.GetConnectionMap(v.ConnectionID)
     if !hasMap {
         common.Log(common.LogPacket, common.LogWarning, "[%d] Vender items list received but no map info yet (vendor:%d, items:%d)", v.ConnectionID, vendorID, len(items))
         return nil

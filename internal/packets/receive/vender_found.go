@@ -14,7 +14,7 @@ func (v *VenderFound) Deserialize() error {
     vendorID := common.ReadUint32LE(v.Payload, 0)
     shopName := common.ReadNullTerminatedString(v.Payload, 4)
 
-    shopMap, hasMap := GetConnectionMap(v.ConnectionID)
+    shopMap, hasMap := packets.GetConnectionMap(v.ConnectionID)
     if !hasMap {
         common.Log(common.LogPacket, common.LogWarning, "[%d] Vendor found but no map info yet: '%s' (ID:%d)", v.ConnectionID, shopName, vendorID)
         return nil

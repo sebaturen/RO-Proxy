@@ -5,6 +5,8 @@ import (
 )
 
 var PacketDatabase = map[uint16]*common.PacketSpec{
+    0x0436: {Desc: "Map Login", Size: 23, Type: common.FIXED, Handler: &MapLogin{}, Alert: false},
+    // No implemented yet
     0x0064: {Desc: "Master Login", Size: 55, Type: common.FIXED, Handler: nil, Alert: false},
     0x0065: {Desc: "Game Login", Size: 17, Type: common.FIXED, Handler: nil, Alert: false},
     0x0066: {Desc: "Char Login", Size: 3, Type: common.FIXED, Handler: nil, Alert: false},
@@ -189,7 +191,6 @@ var PacketDatabase = map[uint16]*common.PacketSpec{
     0x0367: {Desc: "Skill Use Location Text", Size: 92, Type: common.FIXED, Handler: nil, Alert: false},
     0x0368: {Desc: "Actor Info Request", Size: 6, Type: common.FIXED, Handler: nil, Alert: false},
     0x0369: {Desc: "Actor Name Request", Size: 6, Type: common.FIXED, Handler: nil, Alert: false},
-    0x0436: {Desc: "Map Login", Size: 23, Type: common.FIXED, Handler: nil, Alert: false},
     0x0437: {Desc: "Actor Action", Size: 7, Type: common.FIXED, Handler: nil, Alert: false},
     0x0438: {Desc: "Skill Use", Size: 10, Type: common.FIXED, Handler: nil, Alert: false},
     0x0439: {Desc: "Item Use", Size: 8, Type: common.FIXED, Handler: nil, Alert: false},

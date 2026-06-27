@@ -16,8 +16,8 @@ func (m *MapChanged) Deserialize() error {
 
     common.Log(common.LogPacket, common.LogVeryVerbose, "MapChanged - ConnID=%d, SourceIP='%s', mapName='%s', coords=(%d,%d)", m.ConnectionID, m.SourceIP, mapName, coordX, coordY)
 
-    SetConnectionMap(m.ConnectionID, mapName)
-    SetPendingMapChange(m.SourceIP, mapName, coordX, coordY)
+    packets.SetConnectionMap(m.ConnectionID, mapName)
+    packets.SetPendingMapChange(m.SourceIP, mapName, coordX, coordY)
     
     common.Log(common.LogPacket, common.LogInfo, "[%d] Map changed to: %s (X:%d Y:%d) - Pending match for %s", m.ConnectionID, mapName, coordX, coordY, m.SourceIP)
     return nil

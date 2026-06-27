@@ -113,7 +113,7 @@ func (a *ActorInfo) deserializeExtended(opcode uint16) {
 	a.coordY = uint16((coords >> 4) & 0x3FF)
 
 	// Get map from connection
-	mapName, hasMap := GetConnectionMap(a.ConnectionID)
+	mapName, hasMap := packets.GetConnectionMap(a.ConnectionID)
 	if hasMap {
 		a.coordMap = mapName
 	} else {

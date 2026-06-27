@@ -18,17 +18,17 @@ func (m *MapLoaded) Deserialize() error {
     common.Log(common.LogPacket, common.LogVeryVerbose, "MapLoaded - ConnID=%d, SourceIP='%s:%d', DestIP='%s:%d', coords=(%d,%d)", m.ConnectionID, m.SourceIP, m.SourcePort, m.DestIP, m.DestPort, coordX, coordY)
 
     // Try match by coords first (using SourceIP which is client for C→S, server for S→C)
-    mapName, foundByCoords := GetPendingMapChange(m.SourceIP, coordX, coordY)
+    mapName, foundByCoords := packets.GetPendingMapChange(m.SourceIP, coordX, coordY)
     if foundByCoords {
-        SetConnectionMap(m.ConnectionID, mapName)
+        packets.SetConnectionMap(m.ConnectionID, mapName)
         common.Log(common.LogPacket, common.LogInfo, "[%d] Map loaded: %s (X:%d Y:%d) - Matched by coords from %s", m.ConnectionID, mapName, coordX, coordY, m.SourceIP)
         return nil
     }
 
     // Try match by destination (using SourceIP:SourcePort for S→C packets, which is the current server)
-    mapName, foundByDest := GetPendingMapByDestination(m.SourceIP, m.SourcePort)
+    mapName, foundByDest := packets.GetPendingMapByDestination(m.SourceIP, m.SourcePort)
     if foundByDest {
-        SetConnectionMap(m.ConnectionID, mapName)
+        packets.SetConnectionMap(m.ConnectionID, mapName)
         common.Log(common.LogPacket, common.LogInfo, "[%d] Map loaded: %s (X:%d Y:%d) - Matched by destination %s:%d", m.ConnectionID, mapName, coordX, coordY, m.SourceIP, m.SourcePort)
         return nil
     }
