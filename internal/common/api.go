@@ -15,6 +15,7 @@ import (
 type APIRequest struct {
     Endpoint  string
     Payload   map[string]interface{}
+    Retries   uint32 
 }
 
 // UnboundedAPIQueue is a thread-safe unbounded queue that grows until RAM limit.
@@ -137,7 +138,12 @@ func (ac *APIConsumer) consumeLoop() {
     for {
         req := ac.queue.Pop()
         Log(LogAPI, LogVerbose, "Processing request: %s (queue size: %d)", req.Endpoint, ac.queue.Size())
-        ac.sendRequest(req)
+        
+        if req.Retries >= 100 {
+            Log(LogAPI, LogError, "Imposible to delivery request %s", req)
+        } else {
+            ac.sendRequest(req)
+        }
     }
 }
 
@@ -176,6 +182,7 @@ func (ac *APIConsumer) sendRequest(req APIRequest) {
         }
 
         Log(LogAPI, LogVerbose, "[%d] Request failed with status %d (will retry) [%s]", ac.queue.Size(), resp.StatusCode, jsonData)
+        req.Retries++
         ac.queue.Push(req)
         time.Sleep(1 * time.Second)
         return
