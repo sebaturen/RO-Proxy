@@ -13,7 +13,7 @@ type ReceivedCharIdAndMap struct {
 	packets.ParsedPacket
 }
 
-func (r *ReceivedCharIdAndMap) Deserialize() error {
+func (r *ReceivedCharIdAndMap) Deserialize() map[string]any {
     charID := common.ReadUint32LE(r.Payload, 0)
     mapName := common.ReadNullTerminatedString(r.Payload, 4)
     mapURL := common.ReadNullTerminatedString(r.Payload, 26)

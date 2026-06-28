@@ -20,7 +20,7 @@ type SpecialItemObtain struct {
 	monsterCode string
 }
 
-func (sio *SpecialItemObtain) Deserialize() error {
+func (sio *SpecialItemObtain) Deserialize() map[string]any {
 	sio.itemType = sio.Payload[0]
 
 	sio.receivedItemId = common.ReadUint32LE(sio.Payload, 1)
@@ -46,5 +46,5 @@ func (sio *SpecialItemObtain) Deserialize() error {
 
 	common.Log(common.LogPacket, common.LogVeryVerbose, "Special Item received [%d] %s -> %s", sio.itemId, sio.characterName, sio.receivedItemId)
 	packets.SendToAPI(&sio.ParsedPacket, "items/obtain/special", data)
-	return nil
+	return data
 }

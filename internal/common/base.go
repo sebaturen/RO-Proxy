@@ -1,8 +1,9 @@
 package common
 
 import (
-    "encoding/binary"
-    "encoding/hex"
+	"encoding/binary"
+	"encoding/hex"
+	"strings"
 )
 
 type PacketDirection uint8
@@ -31,7 +32,7 @@ type PacketSpec struct {
 }
 
 type PacketDeserializer interface {
-    Deserialize() error
+    Deserialize() map[string]any
 }
 
 func ReadUint32LE(data []byte, offset int) uint32 {
@@ -63,4 +64,21 @@ func ReadNullTerminatedString(data []byte, offset int) string {
 
 func StringToHex(s string) string {
     return hex.EncodeToString([]byte(s))
+}
+
+func HexToHexString(s []byte) string {
+    return hex.EncodeToString(s)
+}
+
+func HexStringToString(hexStr string) (string, error) {
+    s, err := hex.DecodeString(hexStr)
+    if err != nil {
+        return "", err
+    }
+    return string(s), nil
+}
+
+func HexStringToBytes(hexStr string) ([]byte, error) {
+	hexStr = strings.ReplaceAll(hexStr, " ", "")
+	return hex.DecodeString(hexStr)
 }

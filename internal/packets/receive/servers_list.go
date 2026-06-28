@@ -11,7 +11,7 @@ type ServersList struct {
 	packets.ParsedPacket
 }
 
-func (sl *ServersList) Deserialize() error {
+func (sl *ServersList) Deserialize() map[string]any {
 	pktData := sl.Payload
 	
 	serverInfoSize := 165

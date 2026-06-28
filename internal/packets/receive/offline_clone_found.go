@@ -9,7 +9,7 @@ type OfflineCloneFound struct {
 	packets.ParsedPacket
 }
 
-func (o *OfflineCloneFound) Deserialize() error {
+func (o *OfflineCloneFound) Deserialize() map[string]any {
     cloneID := common.ReadUint32LE(o.Payload, 0)
     jobID := common.ReadUint32LE(o.Payload, 4)
     coordX := common.ReadUint16LE(o.Payload, 8)

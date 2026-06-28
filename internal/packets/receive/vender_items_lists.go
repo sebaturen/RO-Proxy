@@ -38,7 +38,7 @@ type VenderItem struct {
     Refine          uint16
 }
 
-func (v *VenderItemsLists) Deserialize() error {
+func (v *VenderItemsLists) Deserialize() map[string]any {
     opcode := v.Opcode
     
     var vendorID, vendorCID uint32
@@ -148,5 +148,5 @@ func (v *VenderItemsLists) Deserialize() error {
     common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Sending vender items to API: vendor %d on map %s (%d items)", v.ConnectionID, vendorID, shopMap, len(items))
     packets.SendToAPI(&v.ParsedPacket, "vending/items", data)
 
-    return nil
+    return data
 }

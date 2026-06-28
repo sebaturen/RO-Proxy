@@ -9,7 +9,7 @@ type MapLoaded struct {
 	packets.ParsedPacket
 }
 
-func (m *MapLoaded) Deserialize() error {
+func (m *MapLoaded) Deserialize() map[string]any {
     coordsCompressed := uint32(m.Payload[4])<<16 | uint32(m.Payload[5])<<8 | uint32(m.Payload[6])
     
     coordX := uint16(coordsCompressed >> 14)

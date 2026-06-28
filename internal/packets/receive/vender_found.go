@@ -9,7 +9,7 @@ type VenderFound struct {
 	packets.ParsedPacket
 }
 
-func (v *VenderFound) Deserialize() error {
+func (v *VenderFound) Deserialize() map[string]any {
 
     vendorID := common.ReadUint32LE(v.Payload, 0)
     shopName := common.ReadNullTerminatedString(v.Payload, 4)
@@ -28,5 +28,5 @@ func (v *VenderFound) Deserialize() error {
 
     common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Sending vendor to API: '%s' on map '%s' (ID:%d)", v.ConnectionID, shopName, shopMap, vendorID)
     packets.SendToAPI(&v.ParsedPacket, "vending/shop", data)
-    return nil
+    return data
 }

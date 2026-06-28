@@ -9,7 +9,7 @@ type MapChanged struct {
 	packets.ParsedPacket
 }
 
-func (m *MapChanged) Deserialize() error {
+func (m *MapChanged) Deserialize() map[string]any {
     mapName := common.ReadNullTerminatedString(m.Payload, 0)
     coordX := common.ReadUint16LE(m.Payload, 16)
     coordY := common.ReadUint16LE(m.Payload, 18)

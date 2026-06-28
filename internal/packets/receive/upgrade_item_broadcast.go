@@ -9,7 +9,7 @@ type UpgradeItemBroadcast struct {
 	packets.ParsedPacket
 }
 
-func (ui *UpgradeItemBroadcast) Deserialize() error {
+func (ui *UpgradeItemBroadcast) Deserialize() map[string]any {
 	characterName := common.ReadNullTerminatedString(ui.Payload, 0)
 	itemId := common.ReadUint32LE(ui.Payload, 24)
 	level := common.ReadUint16LE(ui.Payload, 28)
@@ -24,5 +24,5 @@ func (ui *UpgradeItemBroadcast) Deserialize() error {
 
 	common.Log(common.LogPacket, common.LogVeryVerbose, "Upgrade Item [%s] %d -> %d", characterName, itemId, level)
 	packets.SendToAPI(&ui.ParsedPacket, "items/obtain/upgrade", data)
-	return nil
+	return data
 }

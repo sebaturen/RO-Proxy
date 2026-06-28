@@ -57,23 +57,23 @@ type ActorInfo struct {
 	guildTitle string
 }
 
-func (a *ActorInfo) Deserialize() error {
+func (a *ActorInfo) Deserialize() map[string]any {
 	opcode := a.Opcode
 
 	// Extended version
 	if opcode == ActorPacketMove8 || opcode == ActorPacketConnected8 || opcode == ActorPacketExists8 {
-		a.deserializeExtended(opcode)
+		return a.deserializeExtended(opcode)
 	}
 
 	// Minimal version (party/guild info only)
 	if opcode == ActorPacketInfo2 {
-		a.deserializeMinimal()
+		return a.deserializeMinimal()
 	}
 
 	return nil
 }
 
-func (a *ActorInfo) deserializeExtended(opcode uint16) {
+func (a *ActorInfo) deserializeExtended(opcode uint16) map[string]any {
 	// Calculate offsets based on packet type
 	var offsetOne, offsetTwo int8
 	if opcode == ActorPacketConnected8 {
@@ -133,15 +133,15 @@ func (a *ActorInfo) deserializeExtended(opcode uint16) {
 	// Report based on actor type
 	switch a.actorType {
 	case ActorTypePlayer:
-		a.reportPlayer()
+		return a.reportPlayer()
 	case ActorTypeMonster:
-		a.reportMonster()
+		return a.reportMonster()
 	}
-
+	return nil
 }
 
 // deserializeMinimal handles ACTOR_INFO_2 (party/guild info only)
-func (a *ActorInfo) deserializeMinimal() {
+func (a *ActorInfo) deserializeMinimal() map[string]any {
 	payload := a.Payload
 
 	a.actorID = common.ReadUint32LE(payload, 0)
@@ -150,10 +150,10 @@ func (a *ActorInfo) deserializeMinimal() {
 	a.guildName = common.ReadNullTerminatedString(payload, 52)
 	a.guildTitle = common.ReadNullTerminatedString(payload, 76)
 
-	a.reportPlayerMinimal()
+	return a.reportPlayerMinimal()
 }
 
-func (a *ActorInfo) reportPlayer() {
+func (a *ActorInfo) reportPlayer() map[string]any {
 	data := map[string]interface{}{
 		"account_id":   a.actorID,
 		"character_id": a.characterID,
@@ -187,9 +187,10 @@ func (a *ActorInfo) reportPlayer() {
 
 	common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Player detected: '%s' (JobID:%d, Lvl:%d) at %s (%d,%d)", a.ConnectionID, a.name, a.typeID, a.level, a.coordMap, a.coordX, a.coordY)
 	packets.SendToAPI(&a.ParsedPacket, "character", data)
+	return data
 }
 
-func (a *ActorInfo) reportMonster() {
+func (a *ActorInfo) reportMonster() map[string]any {
 	data := map[string]interface{}{
 		"id":        a.typeID,
 		"level":     a.level,
@@ -201,10 +202,10 @@ func (a *ActorInfo) reportMonster() {
 	common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Monster detected: TypeID:%d Lvl:%d at (%d,%d)", a.ConnectionID, a.typeID, a.level, a.coordX, a.coordY)
 	common.Log(common.LogPacket, common.LogInfo, "Actor Monster info -> %s", data)
 	// common.SendToAPI("monster", data)
-	_ = data
+	return data
 }
 
-func (a *ActorInfo) reportPlayerMinimal() {
+func (a *ActorInfo) reportPlayerMinimal() map[string]any {
 	data := map[string]interface{}{
 		"account_id":  a.actorID,
 		"name":        common.StringToHex(a.name),
@@ -215,4 +216,5 @@ func (a *ActorInfo) reportPlayerMinimal() {
 
 	common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Player party/guild info: '%s' (Party:'%s', Guild:'%s')", a.ConnectionID, a.name, a.partyName, a.guildName)
 	packets.SendToAPI(&a.ParsedPacket, "character/party_guild", data)
+	return data
 }
