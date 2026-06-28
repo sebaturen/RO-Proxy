@@ -21,7 +21,7 @@ func (d *Dashboard) toggleRecording() {
 	})
 	
 	if newState {
-		common.Log(common.LogProxy, common.LogInfo, "[green]Recording started (raw chunks will be saved per connection)[-]")
+		common.Log(common.LogProxy, common.LogInfo, "[green]Recording started[-]")
 	} else {
 		common.Log(common.LogProxy, common.LogInfo, "[yellow]Recording stopped[-]")
 	}
