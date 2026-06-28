@@ -14,12 +14,17 @@ func TestCharEmblemUpdate1(t *testing.T) {
 
 	guildId := 2878
 	actorId := 455
+	emblemId := 36
 	if int(data["guild_id"].(uint32)) != guildId {
 		t.Errorf("Guild expected '%d' guild received '%s'", guildId, data["guild_id"])
 	}
 
 	if int(data["actor_id"].(uint32)) != actorId {
 		t.Errorf("Actor expected '%d' actor received '%s'", actorId, data["actor_id"])
+	}
+
+	if int(data["emblem_id"].(uint32)) != emblemId {
+		t.Errorf("EmblemID expected '%d' actor received '%s'", emblemId, data["emblem_id"])
 	}
 }
 
@@ -32,12 +37,17 @@ func TestCharEmblemUpdate2(t *testing.T) {
 
 	guildId := 203
 	actorId := 454
+	emblemId := 74
 	if int(data["guild_id"].(uint32)) != guildId {
 		t.Errorf("Guild expected '%d' guild received '%s'", guildId, data["guild_id"])
 	}
 
 	if int(data["actor_id"].(uint32)) != actorId {
 		t.Errorf("Actor expected '%d' actor received '%s'", actorId, data["actor_id"])
+	}
+
+	if int(data["emblem_id"].(uint32)) != emblemId {
+		t.Errorf("EmblemID expected '%d' actor received '%s'", emblemId, data["emblem_id"])
 	}
 }
 

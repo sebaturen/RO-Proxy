@@ -13,11 +13,12 @@ func (ceu *CharEmblemUpdate) Deserialize() map[string]any {
 	pktData := ceu.Payload
 
 	guildId := common.ReadUint32LE(pktData, 0)
-	//emblemId := common.ReadUint32LE(pktData, 4)
+	emblemId := common.ReadUint32LE(pktData, 4)
 	actorId := common.ReadUint32LE(pktData, 8)
 
 	data := map[string]any {
 		"guild_id": guildId,
+		"emblem_id": emblemId,
 		"actor_id": actorId,
 	}
 
