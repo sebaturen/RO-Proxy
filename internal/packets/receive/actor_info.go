@@ -200,7 +200,6 @@ func (a *ActorInfo) reportMonster() map[string]any {
 	}
 
 	common.Log(common.LogPacket, common.LogVeryVerbose, "[%d] Monster detected: TypeID:%d Lvl:%d at (%d,%d)", a.ConnectionID, a.typeID, a.level, a.coordX, a.coordY)
-	common.Log(common.LogPacket, common.LogInfo, "Actor Monster info -> %s", data)
 	// common.SendToAPI("monster", data)
 	return data
 }
