@@ -37,7 +37,7 @@ func (sio *SpecialItemObtain) Deserialize() map[string]any {
 	}
 
 	data := map[string]interface{}{
-		"type": sio.itemId,
+		"type": sio.itemType,
 		"received_item_id": sio.receivedItemId,
 		"from_item_id": sio.itemId,
 		"from_monster_code": common.StringToHex(sio.monsterCode),
