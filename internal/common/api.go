@@ -119,6 +119,11 @@ func SendToAPIInternal(endpoint string, payload map[string]interface{}) {
         return
     }
 
+    b, err := json.MarshalIndent(payload, "", "  ")
+    if err == nil {
+        Log(LogAPI, LogVeryVerbose, "[Endpoint '%s'] - [Payload '%s']", endpoint, b)
+    }
+
     Log(LogAPI, LogVerbose, "SendToAPI: %s (queue size before: %d)", endpoint, globalAPIConsumer.queue.Size())
 
     globalAPIConsumer.queue.Push(APIRequest{
