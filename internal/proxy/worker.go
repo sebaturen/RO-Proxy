@@ -199,12 +199,11 @@ func (w *Worker) spawnDeserializer(pkt *packets.ParsedPacket) {
 			unknownPkt = false // can or can't have handler but is know packet
 		}
 		if spec != nil && spec.Handler != nil {
-			handlerValue := reflect.ValueOf(spec.Handler)
-			if handlerValue.Kind() == reflect.Ptr {
-				handlerValue = handlerValue.Elem()
-			}
+			// Create a NEW instance of the handler for this packet to avoid race conditions
+			handlerType := reflect.TypeOf(spec.Handler).Elem()
+			newHandler := reflect.New(handlerType)
 
-			packetField := handlerValue.FieldByName("ParsedPacket")
+			packetField := newHandler.Elem().FieldByName("ParsedPacket")
 			if packetField.IsValid() && packetField.CanSet() {
 				pktValue := reflect.ValueOf(pkt)
 				if pktValue.Kind() == reflect.Ptr {
@@ -214,7 +213,8 @@ func (w *Worker) spawnDeserializer(pkt *packets.ParsedPacket) {
 				packetField.Set(pktValue)
 			}
 
-			spec.Handler.Deserialize()
+			// Call Deserialize on the new isolated instance
+			newHandler.Interface().(common.PacketDeserializer).Deserialize()
 		}
 		AddPacket(pkt.Direction, len(pkt.Payload), unknownPkt)
 	}()
