@@ -1,17 +1,14 @@
-package proxy
+package common
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"runtime"
-	"strings"
-	"time"
+    "bytes"
+    "encoding/json"
+    "net/http"
+    "runtime"
+    "strings"
+    "time"
 
-	"roproxy/internal/common"
-	"roproxy/internal/config"
-    "roproxy/internal/packets"
+    "roproxy/internal/config"
 )
 
 type MonitoringStats struct {
@@ -22,7 +19,7 @@ type MonitoringStats struct {
 }
 
 type PacketStat struct {
-    Direction common.PacketDirection
+    Direction PacketDirection
     Size int
     Unknown bool
 }
@@ -38,7 +35,7 @@ type GlobalStats struct {
     StatQueue           chan *PacketStat
 }
 var globalStats *GlobalStats
-var cfg *config.Config
+var monitoringCfg *config.Config
 
 const (
     bufferCapacity       = 100000
@@ -61,16 +58,16 @@ func StartMonitoring(inCfg *config.Config) {
         StartTime: time.Now(),
         StatQueue: make(chan *PacketStat, 1000),
     }
-    cfg = inCfg
+    monitoringCfg = inCfg
     go monitoringStatusLoop()
     go monitoringLoop()
-    common.Log(common.LogMonitor, common.LogInfo, "Monitoring started (interval: 1 minute)")
+    Log(LogMonitor, LogInfo, "Monitoring started (interval: 1 minute)")
 }
 
 func monitoringStatusLoop() {
     for pkstat := range globalStats.StatQueue {
         globalStats.TotalPackets++
-        if pkstat.Direction == common.ClientToServer {
+        if pkstat.Direction == ClientToServer {
             globalStats.ClientToServer++
             globalStats.BytesClientToServer += uint64(pkstat.Size)
         } else {
@@ -103,7 +100,7 @@ func collectStats() MonitoringStats {
     runtime.ReadMemStats(&memStats)
     
     apiQueueSize := 0
-    apiConsumer := common.GetAPIConsumer()
+    apiConsumer := GetAPIConsumer()
     if apiConsumer != nil {
         apiQueueSize = apiConsumer.QueueSize()
     }
@@ -122,19 +119,19 @@ func checkThresholds(stats MonitoringStats) {
     // Check API queue
     if stats.APIQueueSize > warningThreshold {
         percent := (stats.APIQueueSize * 100) / bufferCapacity
-        common.Log(common.LogMonitor, common.LogWarning, "API queue at %d%% capacity (%d/%d items)", percent, stats.APIQueueSize, bufferCapacity)
+        Log(LogMonitor, LogWarning, "API queue at %d%% capacity (%d/%d items)", percent, stats.APIQueueSize, bufferCapacity)
     }
     
     // Check memory
     if stats.MemoryUsageMB > memoryWarningMB {
-        common.Log(common.LogMonitor, common.LogWarning, "Memory usage at %d MB (threshold: %d MB)", stats.MemoryUsageMB, memoryWarningMB)
+        Log(LogMonitor, LogWarning, "Memory usage at %d MB (threshold: %d MB)", stats.MemoryUsageMB, memoryWarningMB)
     }
     
     // Log stats (verbose info)
-    common.Log(common.LogMonitor, common.LogVerbose, "Stats - Goroutines: %d, Memory: %d MB (Alloc: %d MB), API Queue: %d", stats.ActiveGoroutines, stats.MemoryUsageMB, stats.MemoryAllocMB, stats.APIQueueSize)
+    Log(LogMonitor, LogVerbose, "Stats - Goroutines: %d, Memory: %d MB (Alloc: %d MB), API Queue: %d", stats.ActiveGoroutines, stats.MemoryUsageMB, stats.MemoryAllocMB, stats.APIQueueSize)
 }
 
-func AddPacket(direction common.PacketDirection, size int, unknown bool) {
+func AddPacket(direction PacketDirection, size int, unknown bool) {
     pk := &PacketStat{
         Direction: direction,
         Size: size,
@@ -149,53 +146,65 @@ func AddPacket(direction common.PacketDirection, size int, unknown bool) {
     }
 }
 
-func ReportCloseConnection(c *Connection) {
-    if strings.TrimSpace(cfg.DiscordWebhook) == "" {
-        common.Log(common.LogMonitor, common.LogVeryVerbose, "Discord configuration not set %s", cfg)
+// SendDiscordNotification sends a message to Discord webhook with retry on failure.
+// Retries with exponential backoff until successful.
+func SendDiscordNotification(content string) {
+    if monitoringCfg == nil || strings.TrimSpace(monitoringCfg.DiscordWebhook) == "" {
         return
     }
 
-    duration := time.Since(c.StartTime)
-    if duration.Minutes() < 1 {
-        common.Log(common.LogMonitor, common.LogVeryVerbose, "Close connection for to short event %d", duration)
-        return
-    }
-
-
-    h := int(duration.Hours())
-    m := int(duration.Minutes()) % 60
-    s := int(duration.Seconds()) % 60
-    durationStr := fmt.Sprintf("%02d:%02d:%02d", h, m, s)
-    mapName, _ := packets.GetConnectionMap(c.ID)
-
-    msg := DiscordMessage {
-        Content: fmt.Sprintf("Connection %d was close [Duration: %s] in map %s", c.ID, durationStr, mapName),
-    }
+    msg := DiscordMessage{Content: content}
     payload, err := json.Marshal(msg)
     if err != nil {
-        common.Log(common.LogMonitor, common.LogError, "Error to parse JSON on connection close discord notification %v", err)
+        Log(LogMonitor, LogError, "Discord JSON marshal error: %v", err)
         return
     }
 
-    req, err := http.NewRequest("POST", cfg.DiscordWebhook, bytes.NewBuffer(payload))
-    if err != nil {
-        common.Log(common.LogMonitor, common.LogError, "Error on create discord notification request %v", err)
-        return
-    }
+    const maxRetryDelay = 60 * time.Second
+    retryDelay := 1 * time.Second
+    attempt := 0
 
-    req.Header.Set("Content-Type", "application/json")
-    client := &http.Client{Timeout: 5 * time.Second}
-    resp, err := client.Do(req)
-    if err != nil {
-        common.Log(common.LogMonitor, common.LogError, "Error on send discord notification %v", err)
-        return
-    }
-    defer resp.Body.Close()
+    for {
+        attempt++
+        req, err := http.NewRequest("POST", monitoringCfg.DiscordWebhook, bytes.NewBuffer(payload))
+        if err != nil {
+            Log(LogMonitor, LogError, "Discord request error: %v", err)
+            return
+        }
+        req.Header.Set("Content-Type", "application/json")
 
-    // Discord responde con un Status 204 No Content si todo salió bien
-    if resp.StatusCode == http.StatusNoContent {
-        common.Log(common.LogMonitor, common.LogVeryVerbose, "MSG sended successfull")
-    } else {
-        common.Log(common.LogMonitor, common.LogVeryVerbose, "Error send notification: %d", resp.StatusCode)
+        client := &http.Client{Timeout: 10 * time.Second}
+        resp, err := client.Do(req)
+        if err != nil {
+            Log(LogMonitor, LogWarning, "Discord webhook failed (attempt %d): %v - retrying in %s", attempt, err, retryDelay)
+            time.Sleep(retryDelay)
+            retryDelay *= 2
+            if retryDelay > maxRetryDelay {
+                retryDelay = maxRetryDelay
+            }
+            continue
+        }
+        resp.Body.Close()
+
+        // Check for rate limit (429) or server error (5xx)
+        if resp.StatusCode == 429 || resp.StatusCode >= 500 {
+            Log(LogMonitor, LogWarning, "Discord webhook failed (attempt %d): HTTP %d - retrying in %s", attempt, resp.StatusCode, retryDelay)
+            time.Sleep(retryDelay)
+            retryDelay *= 2
+            if retryDelay > maxRetryDelay {
+                retryDelay = maxRetryDelay
+            }
+            continue
+        }
+
+        // Success
+        if resp.StatusCode == http.StatusNoContent || (resp.StatusCode >= 200 && resp.StatusCode < 300) {
+            if attempt > 1 {
+                Log(LogMonitor, LogInfo, "Discord notification sent after %d attempts", attempt)
+            }
+        } else {
+            Log(LogMonitor, LogWarning, "Discord webhook returned HTTP %d", resp.StatusCode)
+        }
+        return
     }
 }

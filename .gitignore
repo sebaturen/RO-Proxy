@@ -18,5 +18,7 @@ Thumbs.db
 
 # Logs
 *.log
-roproxy
+/proxy
+/analyzer
+/test.test
 recordings/*

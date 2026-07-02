@@ -1,7 +1,6 @@
 package test
 
 import (
-	"roproxy/internal/common"
 	"roproxy/internal/packets/receive"
 	"testing"
 )
@@ -21,7 +20,7 @@ func TestSystemChatMaintenace(t *testing.T) {
 	}
 
 	for i, expVal := range expected {
-		evalData, err := common.HexStringToString(rData[i])
+		evalData, err := HexStringToString(rData[i])
 		if err != nil {
 			t.Errorf("Fail to parse hex to string in expected data '%s' error: '%s'", rData[i], err)
 			continue
@@ -49,7 +48,7 @@ func TestSystemChatTwitch(t *testing.T) {
 	}
 
 	for i, expVal := range expected {
-		evalData, err := common.HexStringToString(rData[i])
+		evalData, err := HexStringToString(rData[i])
 		if err != nil {
 			t.Errorf("Fail to parse hex to string in expected data '%s' error: '%s'", rData[i], err)
 			continue
@@ -77,7 +76,7 @@ func TestSystemChatWoE(t *testing.T) {
 	}
 
 	for i, expVal := range expected {
-		evalData, err := common.HexStringToString(rData[i])
+		evalData, err := HexStringToString(rData[i])
 		if err != nil {
 			t.Errorf("Fail to parse hex to string in expected data '%s' error: '%s'", rData[i], err)
 			continue

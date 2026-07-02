@@ -3,7 +3,6 @@ package common
 import (
 	"encoding/binary"
 	"encoding/hex"
-	"strings"
 )
 
 type PacketDirection uint8
@@ -68,17 +67,4 @@ func StringToHex(s string) string {
 
 func HexToHexString(s []byte) string {
     return hex.EncodeToString(s)
-}
-
-func HexStringToString(hexStr string) (string, error) {
-    s, err := hex.DecodeString(hexStr)
-    if err != nil {
-        return "", err
-    }
-    return string(s), nil
-}
-
-func HexStringToBytes(hexStr string) ([]byte, error) {
-	hexStr = strings.ReplaceAll(hexStr, " ", "")
-	return hex.DecodeString(hexStr)
 }

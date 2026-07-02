@@ -2,12 +2,13 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"sync"
 	"time"
 
 	"github.com/rivo/tview"
+	"roproxy/internal/analyzer"
 	"roproxy/internal/common"
-	"roproxy/internal/proxy"
 )
 
 // Build version - set at compile time via ldflags
@@ -36,6 +37,7 @@ func (v VerbosityLevel) String() string {
 
 type Dashboard struct {
 	app               *tview.Application
+	processor         *analyzer.Processor
 	
 	// UI components
 	statsView         *tview.TextView
@@ -52,8 +54,6 @@ type Dashboard struct {
 	fullTimestamp     bool
 	connectionFilter  uint64  // 0 = show all
 	filterActive      bool
-	recording         bool
-	recordMutex       sync.Mutex
 	
 	// Log buffer
 	logBuffer         []string
@@ -69,11 +69,12 @@ type Dashboard struct {
 	stopChan          chan struct{}
 }
 
-func NewDashboard() *Dashboard {
+func NewDashboard(processor *analyzer.Processor) *Dashboard {
 	app := tview.NewApplication()
 	
 	d := &Dashboard{
 		app:              app,
+		processor:        processor,
 		verbosityLevel:   VerbosityInfo,
 		fullTimestamp:    false,
 		connectionFilter: 0,
@@ -120,13 +121,14 @@ func (d *Dashboard) updateLoop() {
 }
 
 func (d *Dashboard) updateStats() {
-	stats := proxy.GetGlobalStats()
+	stats := common.GetGlobalStats()
 	queueSize := 0
 	if globalAPI := common.GetAPIConsumer(); globalAPI != nil {
 		queueSize = globalAPI.QueueSize()
 	}
 	
-	uptime := time.Since(stats.StartTime).Round(time.Second)
+	uptime := time.Since(d.processor.GetStartTime()).Round(time.Second)
+	totalPackets := stats.ClientToServer + stats.ServerToClient
 	
 	content := fmt.Sprintf(`[yellow]Uptime:[-] %s
 [yellow]Total Packets:[-] %d
@@ -140,7 +142,7 @@ func (d *Dashboard) updateStats() {
 [yellow]Bytes C→S:[-] %s
 [yellow]Bytes S→C:[-] %s`,
 		uptime,
-		stats.TotalPackets,
+		totalPackets,
 		stats.ClientToServer,
 		stats.ServerToClient,
 		stats.UnknownPackets,
@@ -154,8 +156,7 @@ func (d *Dashboard) updateStats() {
 }
 
 func (d *Dashboard) updateConnections() {
-	p := proxy.GetProxy()
-	conns := p.GetActiveConnections()
+	conns := d.processor.GetActiveConnections()
 	
 	d.connectionsView.Clear()
 	
@@ -177,25 +178,26 @@ func (d *Dashboard) updateConnections() {
 func (d *Dashboard) updateControlsView() {
 	verbosityStatus := fmt.Sprintf("[yellow]%s[-]", d.verbosityLevel.String())
 	
-	d.recordMutex.Lock()
-	recordingStatus := colorBool(d.recording, "ON", "OFF")
-	d.recordMutex.Unlock()
-	
 	filterText := "[white]ALL[-]"
 	if d.connectionFilter > 0 {
 		filterText = fmt.Sprintf("[yellow]#%d[-]", d.connectionFilter)
 	}
 	
+	// Check recording status from flag file
+	_, err := os.Stat(".recording_enabled")
+	recordingEnabled := err == nil
+	recordingText := colorBool(recordingEnabled, "ON", "OFF")
+	
 	content := fmt.Sprintf(`[yellow]V[-] Verbosity: %s
 [yellow]F[-] Filter:    %s
-[yellow]R[-] Record:    %s
+[yellow]R[-] Recording: %s
 
 [yellow]L[-] Clear Logs
-[yellow]Q[-] Quit
-[gray]Ctrl+C/Ctrl+D/Q: force quit[-]`,
+[yellow]Q[-] Quit Analyzer
+[gray]Ctrl+C: force quit[-]`,
 		verbosityStatus,
 		filterText,
-		recordingStatus,
+		recordingText,
 	)
 	
 	d.controlsText.SetText(content)
@@ -208,7 +210,7 @@ func (d *Dashboard) updateControlsView() {
 }
 
 func (d *Dashboard) updateStatusBar() {
-	status := fmt.Sprintf("[white]ROProxy Running - v%s", BuildVersion)
+	status := fmt.Sprintf("[white]ROProxy Analyzer - v%s [gray](Hot-Swappable)[-]", BuildVersion)
 	d.statusBar.SetText(status)
 }
 
@@ -249,6 +251,37 @@ func (d *Dashboard) clearLogs() {
 	})
 	
 	common.Log(common.LogUI, common.LogInfo, "[gray]Logs cleared[-]")
+}
+
+// toggleRecording toggles the recording state by creating/deleting the flag file.
+// The Proxy watches this file to enable/disable recording.
+func (d *Dashboard) toggleRecording() {
+	const recordingFlagFile = ".recording_enabled"
+	
+	_, err := os.Stat(recordingFlagFile)
+	currentlyEnabled := err == nil
+	
+	if currentlyEnabled {
+		// Disable: remove the flag file
+		if err := os.Remove(recordingFlagFile); err != nil {
+			common.Log(common.LogUI, common.LogError, "Failed to disable recording: %v", err)
+			return
+		}
+		common.Log(common.LogUI, common.LogInfo, "[red]Recording DISABLED[-]")
+	} else {
+		// Enable: create the flag file
+		file, err := os.Create(recordingFlagFile)
+		if err != nil {
+			common.Log(common.LogUI, common.LogError, "Failed to enable recording: %v", err)
+			return
+		}
+		file.Close()
+		common.Log(common.LogUI, common.LogInfo, "[green]Recording ENABLED[-]")
+	}
+	
+	d.app.QueueUpdateDraw(func() {
+		d.updateControlsView()
+	})
 }
 
 // LogBatch writes multiple log messages in a single UI update for better performance.

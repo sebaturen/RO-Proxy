@@ -1,10 +1,27 @@
 package test
 
 import (
+	"encoding/hex"
 	"fmt"
 	"roproxy/internal/common"
 	"roproxy/internal/packets"
+	"strings"
 )
+
+// HexStringToString converts a hex string to a regular string (test utility)
+func HexStringToString(hexStr string) (string, error) {
+	s, err := hex.DecodeString(hexStr)
+	if err != nil {
+		return "", err
+	}
+	return string(s), nil
+}
+
+// HexStringToBytes converts a hex string to bytes (test utility)
+func HexStringToBytes(hexStr string) ([]byte, error) {
+	hexStr = strings.ReplaceAll(hexStr, " ", "")
+	return hex.DecodeString(hexStr)
+}
 
 // Deserializer interface for any packet that implements Deserialize
 type Deserializer interface {
@@ -28,7 +45,7 @@ func testPacketDeserialize(deserializer Deserializer) (map[string]any, error) {
 
 // createMockParsedPacket creates a mock ParsedPacket for testing
 func createMockParsedPacket(hexString string) (packets.ParsedPacket, error) {
-	payload, err := common.HexStringToBytes(hexString)
+	payload, err := HexStringToBytes(hexString)
 	if err != nil {
 		return packets.ParsedPacket{}, fmt.Errorf("Failed to convert hex string to bytes: %v", err)
 	}

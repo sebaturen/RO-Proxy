@@ -105,10 +105,6 @@ func (p *Proxy) handleConnection(ctx context.Context, clientConn net.Conn) {
         p.connMutex.Unlock()
 
         conn.Close()
-        
-        // Close channel AFTER Close() and Wait() complete
-        // This ensures worker has finished draining
-        close(conn.RawChunkBuffer)
     }()
 
     conn.Start(ctx)
@@ -140,15 +136,4 @@ func getOriginalDest(conn net.Conn) (string, error) {
     port := int(addr.Port>>8) | int(addr.Port&0xff)<<8
 
     return fmt.Sprintf("%s:%d", ip.String(), port), nil
-}
-
-func (p *Proxy) GetActiveConnections() []*Connection {
-    p.connMutex.RLock()
-    defer p.connMutex.RUnlock()
-
-    conns := make([]*Connection, 0, len(p.connections))
-    for _, conn := range p.connections {
-        conns = append(conns, conn)
-    }
-    return conns
 }

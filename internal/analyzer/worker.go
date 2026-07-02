@@ -1,12 +1,9 @@
-package proxy
+package analyzer
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/binary"
-	"fmt"
-	"os"
 	"reflect"
 	"strconv"
 	"strings"
@@ -62,11 +59,10 @@ func (w *Worker) Close() {
 func (w *Worker) workerLoop(ctx context.Context) {
 	defer w.wg.Done()
 
-	// CRITICAL: Auto-recover to prevent proxy crash
+	// CRITICAL: Auto-recover to prevent analyzer crash
 	defer func() {
 		if r := recover(); r != nil {
-			common.Log(common.LogProxy, common.LogError, "PANIC RECOVERED in workerLoop (Connection #%d): %v - Worker restarting", w.ConnectionID, r)
-			// Restart worker loop (same instance, Connection still points to this Worker)
+			common.Log(common.LogPacket, common.LogError, "PANIC RECOVERED in workerLoop (Connection #%d): %v - Worker restarting", w.ConnectionID, r)
 			go w.workerLoop(ctx)
 		}
 	}()
@@ -77,35 +73,29 @@ func (w *Worker) workerLoop(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			// Graceful drain: process remaining packets before exit
 			w.drainRemainingPackets(clientBuffer, serverBuffer)
 			return
 
-		case chunk := <-w.RawChunkBuffer:
-			// Process chunk (already recorded by Connection)
+		case chunk, ok := <-w.RawChunkBuffer:
+			if !ok {
+				// Channel closed
+				w.drainRemainingPackets(clientBuffer, serverBuffer)
+				return
+			}
 			w.processChunk(chunk, clientBuffer, serverBuffer)
 		}
 	}
 }
 
 func (w *Worker) processChunk(chunk *packets.RawChunk, clientBuffer, serverBuffer *bytes.Buffer) {
-	// CRITICAL: Record RAW chunk BEFORE sending to worker
-	if IsRecording() {
-		w.recordRawChunk(chunk)
-	}
-	
 	if chunk.Direction == common.ClientToServer {
 		clientBuffer.Write(chunk.Data)
-
-		// Try to parse complete packets
 		parsedPackets := w.tryParsePackets(clientBuffer, chunk.Direction, chunk.Timestamp)
 		for _, pkt := range parsedPackets {
 			w.spawnDeserializer(pkt)
 		}
 	} else {
 		serverBuffer.Write(chunk.Data)
-
-		// Try to parse complete packets
 		parsedPackets := w.tryParsePackets(serverBuffer, chunk.Direction, chunk.Timestamp)
 		for _, pkt := range parsedPackets {
 			w.spawnDeserializer(pkt)
@@ -114,7 +104,7 @@ func (w *Worker) processChunk(chunk *packets.RawChunk, clientBuffer, serverBuffe
 }
 
 func (w *Worker) drainRemainingPackets(clientBuffer, serverBuffer *bytes.Buffer) {
-	common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d draining remaining packets (buffer size: %d)", w.ConnectionID, len(w.RawChunkBuffer))
+	common.Log(common.LogPacket, common.LogVeryVerbose, "Connection #%d draining remaining packets (buffer size: %d)", w.ConnectionID, len(w.RawChunkBuffer))
 
 	processed := 0
 	timeout := time.After(500 * time.Millisecond)
@@ -123,9 +113,8 @@ func (w *Worker) drainRemainingPackets(clientBuffer, serverBuffer *bytes.Buffer)
 		select {
 		case chunk, ok := <-w.RawChunkBuffer:
 			if !ok {
-				// Channel closed
 				w.waitForDeserializers()
-				common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d drained %d packets", w.ConnectionID, processed)
+				common.Log(common.LogPacket, common.LogVeryVerbose, "Connection #%d drained %d packets", w.ConnectionID, processed)
 				return
 			}
 
@@ -133,9 +122,8 @@ func (w *Worker) drainRemainingPackets(clientBuffer, serverBuffer *bytes.Buffer)
 			processed++
 
 		case <-timeout:
-			// Timeout reached - stop draining
 			w.waitForDeserializers()
-			common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d drain timeout - processed %d packets, %d remaining",
+			common.Log(common.LogPacket, common.LogVeryVerbose, "Connection #%d drain timeout - processed %d packets, %d remaining",
 				w.ConnectionID, processed, len(w.RawChunkBuffer))
 			return
 		}
@@ -143,19 +131,17 @@ func (w *Worker) drainRemainingPackets(clientBuffer, serverBuffer *bytes.Buffer)
 }
 
 func (w *Worker) waitForDeserializers() {
-	// Wait for all deserializers to finish (up to 1 second)
 	deadline := time.Now().Add(1 * time.Second)
 
 	for {
-		// Try to acquire all 100 slots - if successful, no deserializers running
 		if w.semaphore.TryAcquire(100) {
 			w.semaphore.Release(100)
-			common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d - all deserializers finished", w.ConnectionID)
+			common.Log(common.LogPacket, common.LogVeryVerbose, "Connection #%d - all deserializers finished", w.ConnectionID)
 			return
 		}
 
 		if time.Now().After(deadline) {
-			common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d - timeout waiting for deserializers", w.ConnectionID)
+			common.Log(common.LogPacket, common.LogVeryVerbose, "Connection #%d - timeout waiting for deserializers", w.ConnectionID)
 			return
 		}
 
@@ -164,14 +150,10 @@ func (w *Worker) waitForDeserializers() {
 }
 
 func (w *Worker) spawnDeserializer(pkt *packets.ParsedPacket) {
-	// Spawn goroutine immediately (non-blocking)
-	// Semaphore acquired inside to prevent blocking the worker
 	go func() {
-		// Acquire semaphore (blocks if 100 deserializers already running)
 		w.semaphore.Acquire(context.Background(), 1)
 		defer w.semaphore.Release(1)
 
-		// Look up packet spec
 		var spec *common.PacketSpec
 		if pkt.Direction == common.ServerToClient {
 			spec = receive.PacketDatabase[pkt.Opcode]
@@ -190,16 +172,14 @@ func (w *Worker) spawnDeserializer(pkt *packets.ParsedPacket) {
 		descDisplay := common.FormatDesc(desc)
 		payloadHex := common.FormatPayload(pkt.Payload, true)
 
-		// Log packet
 		common.Log(common.LogPacket, common.LogVerbose, "[yellow][#%d][-]%s[yellow][0x%04X][-]%s [white]size=%d%s payload=%s[-]", pkt.ConnectionID, dirSymbol, pkt.Opcode, descDisplay, len(pkt.Payload), checksumStr, payloadHex)
 
 		// Call deserializer handler if exists
 		unknownPkt := true
 		if spec != nil {
-			unknownPkt = false // can or can't have handler but is know packet
+			unknownPkt = false
 		}
 		if spec != nil && spec.Handler != nil {
-			// Create a NEW instance of the handler for this packet to avoid race conditions
 			handlerType := reflect.TypeOf(spec.Handler).Elem()
 			newHandler := reflect.New(handlerType)
 
@@ -213,10 +193,11 @@ func (w *Worker) spawnDeserializer(pkt *packets.ParsedPacket) {
 				packetField.Set(pktValue)
 			}
 
-			// Call Deserialize on the new isolated instance
 			newHandler.Interface().(common.PacketDeserializer).Deserialize()
 		}
-		AddPacket(pkt.Direction, len(pkt.Payload), unknownPkt)
+		
+		// Track packet stats
+		common.AddPacket(pkt.Direction, len(pkt.Payload), unknownPkt)
 	}()
 }
 
@@ -257,8 +238,8 @@ func (w *Worker) tryParsePackets(buffer *bytes.Buffer, direction common.PacketDi
 				if packetSize < 2 || packetSize > 10*1024*1024 {
 					payload := common.FormatPayload(bufData, false)
 					ptDir := common.FormatDirection(direction)
-					common.Log(common.LogProxy, common.LogError, "CRITICAL: Invalid packet size %d (dir=%s, opcode=0x%04X, conn=%d) payload %s", packetSize, ptDir, opcode, w.ConnectionID, payload)
-					packetSize = 2 // remove head and continue parsing next packages
+					common.Log(common.LogPacket, common.LogError, "CRITICAL: Invalid packet size %d (dir=%s, opcode=0x%04X, conn=%d) payload %s", packetSize, ptDir, opcode, w.ConnectionID, payload)
+					packetSize = 2
 				}
 				valid = buffer.Len() >= packetSize
 			}
@@ -301,7 +282,6 @@ func (w *Worker) tryParsePackets(buffer *bytes.Buffer, direction common.PacketDi
 			}
 		}
 
-		// Parse network addresses for MapLocation system
 		sourceIP, sourcePort, destIP, destPort := w.parseNetworkAddresses(direction)
 
 		var startData = 2
@@ -309,7 +289,6 @@ func (w *Worker) tryParsePackets(buffer *bytes.Buffer, direction common.PacketDi
 			startData = 4
 		}
 
-		// Fix bounds: if packet is smaller than startData, adjust it
 		if startData > len(packetData) {
 			startData = len(packetData)
 		}
@@ -329,14 +308,11 @@ func (w *Worker) tryParsePackets(buffer *bytes.Buffer, direction common.PacketDi
 	}
 }
 
-// parseNetworkAddresses extracts IP addresses and port from connection.
-// Returns: sourceIP, sourcePort, destIP, destPort based on packet direction.
 func (w *Worker) parseNetworkAddresses(direction common.PacketDirection) (string, int, string, int) {
 	var sourceIP, destIP string
 	var sourcePort, destPort int
 
 	if direction == common.ClientToServer {
-		// Client → Server: source=client, dest=server
 		clientParts := strings.Split(w.ClientAddr, ":")
 		sourceIP = clientParts[0]
 		if len(clientParts) > 1 {
@@ -349,7 +325,6 @@ func (w *Worker) parseNetworkAddresses(direction common.PacketDirection) (string
 			destPort, _ = strconv.Atoi(serverParts[1])
 		}
 	} else {
-		// Server → Client: source=server, dest=client
 		serverParts := strings.Split(w.ServerAddr, ":")
 		sourceIP = serverParts[0]
 		if len(serverParts) > 1 {
@@ -375,49 +350,6 @@ func (w *Worker) parseHTTPPacket(buffer *bytes.Buffer) (int, bool) {
 		return 0, false
 	}
 
-    headerEnd += 4
-    return headerEnd, true
-}
-
-
-// recordRawChunk writes raw chunk to recording file (for reverse engineering).
-func (w *Worker) recordRawChunk(chunk *packets.RawChunk) {
-    r := GetRecording()
-    r.recordMutex.Lock()
-    defer r.recordMutex.Unlock()
-
-    // Lazy init: create file on first chunk if recording is active
-    if r.file == nil {
-    	if err := createRecordFile(r); err != nil {
-    		common.Log(common.LogRecord, common.LogError, "Connection #%d failed to create recording file: %v", w.ConnectionID, err)
-    		return
-    	}
-    }
-
-    dirStr := common.FormatDirection(chunk.Direction)
-    hexData := common.FormatPayload(chunk.Data, false)
-    line := fmt.Sprintf("%d;%d;%s;%d;%s\n", chunk.Timestamp, w.ConnectionID, dirStr, len(chunk.Data), hexData)
-
-    r.writer.WriteString(line)
-}
-
-func createRecordFile(r *Recording) error {
-    // Ensure recordings directory exists
-    if err := os.MkdirAll("recordings", 0755); err != nil {
-        return fmt.Errorf("failed to create recordings directory: %w", err)
-    }
-    
-    timestamp := time.Now().Format("20060102_150405")
-    filename := fmt.Sprintf("recordings/%s.txt", timestamp)
-    
-    file, err := os.Create(filename)
-    if err != nil {
-        return fmt.Errorf("failed to create file: %w", err)
-    }
-    
-    r.file = file
-    r.writer = bufio.NewWriter(file)
-    
-    common.Log(common.LogRecord, common.LogInfo, "Started recording: %s", filename)
-    return nil
+	headerEnd += 4
+	return headerEnd, true
 }

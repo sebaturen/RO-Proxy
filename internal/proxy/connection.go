@@ -2,11 +2,13 @@ package proxy
 
 import (
     "context"
+    "fmt"
     "net"
     "sync"
     "time"
 
     "roproxy/internal/common"
+    "roproxy/internal/ipc"
     "roproxy/internal/packets"
 )
 
@@ -18,9 +20,6 @@ type Connection struct {
     ServerAddr   string
     StartTime    time.Time
 
-    // Processing pipeline
-    RawChunkBuffer chan *packets.RawChunk
-    worker         *Worker
     cancel         context.CancelFunc
     wg             sync.WaitGroup
 }
@@ -32,7 +31,6 @@ func NewConnection(id uint64, clientConn net.Conn, serverAddr string) (*Connecti
     }
 
     clientAddr := clientConn.RemoteAddr().String()
-    buffer := make(chan *packets.RawChunk, 100000)
 
     conn := &Connection{
         ID:         id,
@@ -41,8 +39,6 @@ func NewConnection(id uint64, clientConn net.Conn, serverAddr string) (*Connecti
         ClientAddr: clientAddr,
         ServerAddr: serverAddr,
         StartTime:  time.Now(),
-        RawChunkBuffer: buffer,
-        worker:     NewWorker(id, clientAddr, serverAddr, buffer),
     }
 
     return conn, nil
@@ -52,13 +48,16 @@ func (c *Connection) Start(ctx context.Context) {
     connCtx, cancel := context.WithCancel(ctx)
     c.cancel = cancel
 
-    // Debug log connection addresses
+    fmt.Printf("[Proxy] Connection #%d opened: %s → %s\n", c.ID, c.ClientAddr, c.ServerAddr)
     common.Log(common.LogProxy, common.LogVeryVerbose, "Connection #%d started: ClientAddr='%s', ServerAddr='%s'", c.ID, c.ClientAddr, c.ServerAddr)
 
-    // Start worker
-    c.worker.Start(connCtx)
+    // Notify Analyzer of new connection
+    ipcClient := GetIPCClient()
+    if ipcClient != nil {
+        ipcClient.Send(ipc.NewConnOpenFrame(c.ID, time.Now().Unix(), c.ClientAddr, c.ServerAddr))
+    }
 
-    // Start relays
+    // Start relays (no local worker - data goes to IPC)
     c.wg.Add(2)
     go c.relayClientToServer(connCtx)
     go c.relayServerToClient(connCtx)
@@ -66,30 +65,26 @@ func (c *Connection) Start(ctx context.Context) {
 
 func (c *Connection) Wait() {
     c.wg.Wait()
-    c.worker.Wait()
 }
 
 func (c *Connection) Close() {
-    // Report close connection
-    ReportCloseConnection(c)
+    duration := time.Since(c.StartTime).Round(time.Second)
+    fmt.Printf("[Proxy] Connection #%d closed: %s → %s (duration: %s)\n", c.ID, c.ClientAddr, c.ServerAddr, duration)
 
-    // Cancel all goroutines (relays + worker will stop)
+    // Notify Analyzer of connection close
+    ipcClient := GetIPCClient()
+    if ipcClient != nil {
+        ipcClient.Send(ipc.NewConnCloseFrame(c.ID, time.Now().Unix()))
+    }
+
     if c.cancel != nil {
         c.cancel()
     }
 
-    // Close worker
-    c.worker.Close()
-
-    // Close network connections (forces relays to exit if still blocked on Read)
     c.ClientConn.Close()
     c.ServerConn.Close()
 
-    // Close recording file if open
     c.closeRecordFile()
-
-    // Clear connection-specific data
-    packets.ClearConnectionMap(c.ID)
 }
 
 func (c *Connection) relayClientToServer(ctx context.Context) {
@@ -102,7 +97,7 @@ func (c *Connection) relayServerToClient(ctx context.Context) {
 
 func (c *Connection) relay(ctx context.Context, source, dest net.Conn, direction common.PacketDirection) {
     defer c.wg.Done()
-    defer c.cancel() // Cancel all goroutines when this relay exits
+    defer c.cancel()
 
     buf := make([]byte, 4096)
     for {
@@ -127,21 +122,25 @@ func (c *Connection) relay(ctx context.Context, source, dest net.Conn, direction
             return
         }
 
-        // Now copy for worker (async processing, order doesn't matter here)
+        // Copy data for async processing
         rawData := make([]byte, n)
         copy(rawData, buf[:n])
+        timestamp := time.Now().Unix()
 
-        chunk := &packets.RawChunk{
-            ConnectionID: c.ID,
-            Timestamp:    time.Now().Unix(),
-            Direction:    direction,
-            Data:         rawData,
+        // Record raw chunk if recording is enabled (before IPC)
+        if IsRecording() {
+            c.recordRawChunk(&packets.RawChunk{
+                ConnectionID: c.ID,
+                Timestamp:    timestamp,
+                Direction:    direction,
+                Data:         rawData,
+            })
         }
 
-        select {
-        case c.RawChunkBuffer <- chunk:
-        default:
-            common.Log(common.LogProxy, common.LogError, "CRITICAL: Connection #%d buffer overflow - worker cannot keep up with network traffic (capacity: 100,000) - Dropping chunk", c.ID)
+        // Send to IPC for Analyzer processing (non-blocking)
+        ipcClient := GetIPCClient()
+        if ipcClient != nil {
+            ipcClient.Send(ipc.NewDataFrame(c.ID, timestamp, direction, c.ClientAddr, c.ServerAddr, rawData))
         }
     }
 }
@@ -154,4 +153,9 @@ func (c *Connection) closeRecordFile() {
     if r.writer != nil {
         r.writer.Flush()
     }
+}
+
+// recordRawChunk writes raw chunk to recording file
+func (c *Connection) recordRawChunk(chunk *packets.RawChunk) {
+    recordRawChunkToFile(c.ID, chunk)
 }
